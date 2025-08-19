@@ -748,3 +748,499 @@ list.parallelStream()        // 得到并行流
 #### completableFuture怎么用的？
 
 CompletableFuture是由Java 8引入的，在Java8之前我们一般通过Future实现异步。
+
+**Future实现异步：** ==阻塞== 
+
+```java
+import java.util.concurrent.*;
+
+public class FutureDemo {
+    public static void main(String[] args) throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        // 提交一个异步任务，返回 Future
+        Future<Integer> future = executor.submit(() -> {
+            System.out.println("任务开始执行...");
+            Thread.sleep(2000);  // 模拟耗时
+            return 42;
+        });
+
+        System.out.println("主线程继续执行其他逻辑...");
+
+        // 阻塞等待结果（任务没完成就会阻塞在这里）
+        Integer result = future.get();
+
+        System.out.println("异步任务结果：" + result);
+
+        executor.shutdown();
+    }
+}
+
+//结果
+主线程继续执行其他逻辑...
+任务开始执行...
+异步任务结果：42
+
+```
+
+**CompletableFuture：** ==非阻塞回调==
+
+```java
+import java.util.concurrent.*;
+
+public class CompletableFutureDemo {
+    public static void main(String[] args) throws Exception {
+        CompletableFuture<Integer> cf = CompletableFuture.supplyAsync(() -> {
+            System.out.println("任务开始执行...");
+            try { Thread.sleep(2000); } catch (InterruptedException e) {}
+            return 42;
+        });
+
+        // 非阻塞回调，结果出来后自动触发
+        cf.thenAccept(result -> {
+            System.out.println("异步任务结果：" + result);
+        });
+
+        System.out.println("主线程继续执行，不阻塞...");
+        
+        Thread.sleep(3000); // 等一下，防止主线程过早结束
+    }
+}
+
+//输出结果
+主线程继续执行，不阻塞...
+任务开始执行...
+异步任务结果：42
+
+```
+
+==但get/join方法其实也是阻塞的  CompletableFuture通过异步回调实现非阻塞==
+
+```
+[ CompletableFuture 容器 ]
+        |
+        |-- 状态: 未完成 --> 阻塞 get/join
+        |-- 状态: 完成(值) --> get() 返回这个值
+        |-- 状态: 异常 --> get() 抛异常
+
+```
+
+##### 回调地狱
+
+“回调地狱”并不是说程序**卡住、阻塞**，它跟线程阻塞没关系。
+
+它的本质是：
+
+- **代码嵌套太深** → 逻辑层层套，每增加一个异步操作就右移一层
+- **可读性差、难维护** → 异常处理、调试都变麻烦
+- **容易出错** → 嵌套过多可能忘记处理某些分支或异常
+
+**回调地狱**
+
+```java
+CompletableFuture.supplyAsync(() -> task1()).thenAccept(result1 -> {
+    CompletableFuture.supplyAsync(() -> task2(result1)).thenAccept(result2 -> {
+        CompletableFuture.supplyAsync(() -> task3(result2)).thenAccept(result3 -> {
+            CompletableFuture.supplyAsync(() -> task4(result3)).thenAccept(result4 -> {
+                System.out.println(result4);
+            });
+        });
+    });
+});
+
+```
+
+**链式编程**
+
+```java
+CompletableFuture.supplyAsync(() -> task1())
+    .thenApply(result1 -> task2(result1))
+    .thenApply(result2 -> task3(result2))
+    .thenApply(result3 -> task4(result3))
+    .thenAccept(finalResult -> System.out.println(finalResult));
+
+```
+
+#### Java 21 新特性知道哪些？
+
+**新新语言特性：**
+
+- **Switch 语句的模式匹配**：该功能在 Java 21 中也得到了增强。它允许在`switch`的`case`标签中使用模式匹配，使操作更加灵活和类型安全，减少了样板代码和潜在错误。
+
+  ```java
+  switch (obj) {
+      case String s && s.length() > 3 -> System.out.println("长字符串: " + s);
+      case String s -> System.out.println("短字符串: " + s);
+      case Integer i -> System.out.println("整数: " + i);
+      default -> System.out.println("其它类型");
+  }
+  ```
+
+  
+
+- **数组模式**：将模式匹配扩展到数组中，使开发者能够在条件语句中更高效地解构和检查数组内容。例如，`if (arr instanceof int[] {1, 2, 3})`，可以直接判断数组`arr`是否匹配指定的模式。
+
+  ```java
+  //传统写法
+  int[] arr = {1, 2, 3};
+  if (arr.length == 3 && arr[0] == 1 && arr[1] == 2 && arr[2] == 3) {
+      System.out.println("数组匹配 [1,2,3]");
+  }
+  
+  ```
+
+- **字符串模板（预览版）**：提供了一种更可读、更易维护的方式来构建复杂字符串，支持在字符串字面量中直接嵌入表达式。例如，以前可能需要使用`"hello " + name + ", welcome to the geeksforgeeks!"`这样的方式来拼接字符串，在 Java 21 中可以使用`hello {name}, welcome to the geeksforgeeks!`这种更简洁的写法
+
+**新并发特性方面：**
+
+- **虚拟线程**：这是 Java 21 引入的一种轻量级并发的新选择。它通过共享堆栈的方式，大大降低了内存消耗，同时提高了应用程序的吞吐量和响应速度。可以使用静态构建方法、构建器或`ExecutorService`来创建和使用虚拟线程。
+- **Scoped Values（范围值）**：提供了一种在线程间共享不可变数据的新方式，避免使用传统的线程局部存储，促进了更好的封装性和线程安全，可用于在不通过方法参数传递的情况下，传递上下文信息，如用户会话或配置设置。
+
+### 1.13 序列化
+
+#### 怎么把一个对象从一个jvm转移到另一个jvm?
+
+- **使用序列化和反序列化**：将对象序列化为字节流，并将其==发送到另一个 JVM==，然后在另一个 JVM 中反序列化字节流恢复对象。这可以通过 Java 的 ObjectOutputStream 和 ObjectInputStream 来实现。
+- **使用消息传递机制**：利用消息传递机制，比如使用消息队列（如 ==RabbitMQ、Kafka==）或者通过网络套接字进行通信，将对象从一个 JVM 发送到另一个。这需要==自定义协议来序列化对象==并在另一个 JVM 中反序列化。
+- **使用远程方法调用（RPC）**：可以使用远程方法调用框架，如 gRPC，来实现对象在不同 JVM 之间的传输。远程方法调用可以让你在分布式系统中调用远程 JVM 上的对象的方法。
+- **使用共享数据库或缓存**：将对象存储在==共====享数据库==（如 MySQL、PostgreSQL）或==共享缓存==（如 Redis）中，让不同的 JVM 可以访问这些共享数据。这种方法适用于需要共享数据但不需要直接传输对象的场景。
+
+#### Java序列化存在什么问题？
+
+- ==无法跨语言==： Java 序列化目前只适用基于 Java 语言实现的框架，其它语言大部分都没有使用 Java 的序列化框架，也没有实现 Java 序列化这套协议。因此，如果是两个基于不同语言编写的应用程序相互通信，则无法实现两个应用服务之间传输对象的序列化与反序列化。
+
+- 容易被攻击：Java 序列化是不安全的，我们知道对象是通过在 ObjectInputStream 上调用 readObject() 方法进行反序列化的，这个方法其实是一个神奇的构造器，它可以将类路径上几乎所有实现了 Serializable 接口的对象都实例化。这也就意味着，在反序列化字节流的过程中，该方法可以执行任意类型的代码，这是非常危险的。
+
+  ```java
+  // 假设有恶意类
+  class Evil implements Serializable {
+      private void readObject(ObjectInputStream in) throws Exception {
+          Runtime.getRuntime().exec("calc.exe"); // Windows 打开计算器
+      }
+  }
+  
+  // 攻击者构造 Evil 的字节流发送给服务器
+  ObjectInputStream ois = new ObjectInputStream(inputStream);
+  Object obj = ois.readObject(); // 触发了恶意代码
+  
+  ```
+
+  ==jvm反序列化时看到readObject都会执行==
+
+- ==序列化后的流太大==：序列化后的二进制流大小能体现序列化的性能。序列化后的二进制数组越大，占用的存储空间就越多，存储硬件的成本就越高。如果我们是进行网络传输，则占用的带宽就更多，这时就会影响到系统的吞吐量。
+
+**考虑用主流序列化框架，比如FastJson、Protobuf来替代Java 序列化。**
+
+| 维度     | JDK 原生           | JSON（FastJSON）       | 二进制 RPC（Hessian/Protobuf） |
+| -------- | ------------------ | ---------------------- | ------------------------------ |
+| 流大小   | 包含类元数据，较大 | 字段少，简单对象可能小 | 字段顺序固定，无字段名，最紧凑 |
+| 可读性   | 不可读             | 可读                   | 不可读                         |
+| 解析性能 | 中等               | 较快（轻量对象）       | 很快（轻量+直接内存映射）      |
+| 安全性   | 不安全             | 安全                   | 安全（不自动调用构造器/方法）  |
+
+#### 将对象转为二进制字节流具体怎么实现?
+
+只有实现了==Serializable==或==Externalizable==接口的类的对象才能被序列化，否则抛出异常！
+
+1️⃣ **不加 serialVersionUID（自动生成）**
+
+- JVM 会根据类的结构（字段、方法、继承关系等）计算一个 **hash 值** 作为序列化版本号
+- **特点**：
+  1. 类的每次修改都有可能改变自动生成的值
+  2. 序列化的数据只能和 **完全相同版本的类** 反序列化
+
+示例
+
+```
+public class User implements Serializable {
+    private String name;
+    private int age;
+}
+```
+
+- 自动生成 serialVersionUID，比如 `1234567890L`
+- 你序列化一个对象到文件，然后修改类：
+
+```
+public class User implements Serializable {
+    private String name;
+    private int age;
+    private String email; // 新增字段
+}
+```
+
+- JVM 自动生成的 serialVersionUID 变了，比如 `987654321L`
+- 尝试反序列化旧数据 → 抛出：
+
+```
+java.io.InvalidClassException: User; local class incompatible
+```
+
+> 问题：哪怕只是加了一个字段，也会导致反序列化失败
+
+------
+
+2️⃣ **加上 serialVersionUID（手动指定）**
+
+```
+public class User implements Serializable {
+    private static final long serialVersionUID = 1L;
+    private String name;
+    private int age;
+}
+```
+
+- 无论类怎么修改（只要不破坏字段类型和逻辑），serialVersionUID 都不变
+- 反序列化旧数据时，JVM 会认为版本一致 → 可以反序列化
+- 新增字段会使用 **默认值**（null、0、false 等）
+
+示例
+
+```
+public class User implements Serializable {
+    private static final long serialVersionUID = 1L;
+    private String name;
+    private int age;
+    private String email; // 新增字段
+}
+```
+
+- 旧数据依然可以反序列化
+- `email` 字段值为 null
+
+---
+
+##### 二进制写入/读取文件
+
+1.实现对象序列化：
+
+- 让类实现Serializable接口：
+
+```java
+import java.io.Serializable;
+
+public class MyClass implements Serializable {
+    // class code
+}
+```
+
+- 创建输出流并写入对象：
+
+```java
+import java.io.FileOutputStream;
+import java.io.ObjectOutputStream;
+
+MyClass obj = new MyClass();
+try {
+    FileOutputStream fileOut = new FileOutputStream("object.ser");
+    ObjectOutputStream out = new ObjectOutputStream(fileOut);
+    out.writeObject(obj);
+    out.close();
+    fileOut.close();
+} catch (IOException e) {
+    e.printStackTrace();
+}
+```
+
+**2.实现对象反序列化：**
+
+- 创建输入流并读取对象：
+
+```java
+import java.io.FileInputStream;
+import java.io.ObjectInputStream;
+
+MyClass newObj = null;
+try {
+    FileInputStream fileIn = new FileInputStream("object.ser");
+    ObjectInputStream in = new ObjectInputStream(fileIn);
+    newObj = (MyClass) in.readObject();
+    in.close();
+    fileIn.close();
+} catch (IOException | ClassNotFoundException e) {
+    e.printStackTrace();
+}
+```
+
+通过以上步骤，对象obj会被序列化并写入到文件"object.ser"中，然后通过反序列化操作，从文件中读取字节流并恢复为对象newObj。这种方式可以方便地将对象转换为字节流用于持久化存储、网络传输等操作。需要注意的是，要确保类实现了Serializable接口，并且所有成员变量都是Serializable的才能被正确序列化。
+
+##### 自定义序列化
+
+```java
+import com.alibaba.fastjson.JSON;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+class User {
+    private String name;
+    private int age;
+
+    public User() {} // 反序列化需要无参构造器
+
+    public User(String name, int age) {
+        this.name = name;
+        this.age = age;
+    }
+
+    public String getName() { return name; }
+    public int getAge() { return age; }
+
+    @Override
+    public String toString() {
+        return "User{name='" + name + "', age=" + age + "}";
+    }
+}
+
+public class FastJsonFileDemo {
+    public static void main(String[] args) throws IOException {
+        // 1️⃣ 创建对象
+        User user = new User("Alice", 18);
+
+        // 2️⃣ 序列化为 JSON 字符串
+        String jsonString = JSON.toJSONString(user);
+
+        // 3️⃣ 写入文件
+        Path filePath = Path.of("user.json");
+        Files.writeString(filePath, jsonString); // JDK 11+ 方法
+
+        // 或使用 FileWriter 兼容 JDK 8
+        /*
+        try (FileWriter writer = new FileWriter("user.json")) {
+            writer.write(jsonString);
+        }
+        */
+
+        System.out.println("写入文件完成: " + jsonString);
+
+        // 4️⃣ 从文件读取 JSON
+        String readJson = Files.readString(filePath);
+
+        // 5️⃣ 反序列化回对象
+        User readUser = JSON.parseObject(readJson, User.class);
+
+        System.out.println("读取对象: " + readUser);
+    }
+}
+
+```
+
+### 设计模式
+
+#### volatile和sychronized如何实现单例模式
+
+单例模式（Singleton Pattern）是 **一种常用的设计模式**，用于保证一个类 **在整个应用程序生命周期中只有一个实例**，并提供一个全局访问点。
+
+```java
+public class SingleTon {
+
+    // volatile 关键字修饰变量 防止指令重排序
+    private static volatile SingleTon instance = null;
+    private SingleTon(){}
+     
+    public static  SingleTon getInstance(){
+        if(instance == null){
+            //同步代码块 只有在第一次获取对象的时候会执行到 ，第二次及以后访问时 instance变量均非null故不会往下执行了 直接返回啦
+            synchronized(SingleTon.class){
+                if(instance == null){
+                    instance = new SingleTon();
+                }
+            }
+        }
+        return instance;
+    }
+}
+```
+
+### I/O
+
+#### BIO、NIO、AIO区别是什么？
+
+- BIO（blocking IO）：就是传统的 java.io 包，它是基于流模型实现的，交互的方式是同步、阻塞方式，也就是说在读入输入流或者输出流时，==在读写动作完成之前，线程会一直阻塞在那里==，它们之间的调用是可靠的线性顺序。优点是代码比较简单、直观；缺点是 IO 的效率和扩展性很低，容易成为应用性能瓶颈。
+
+  ==一个线程处理一个连接==
+
+  ![image-20250820023135122](assets/image-20250820023135122.png)
+
+- NIO（non-blocking IO） ：Java 1.4 引入的 java.nio 包，提供了 Channel、Selector、Buffer 等新的抽象，可以构建多路复用的、同步非阻塞 IO 程序，同时提供了更接近操作系统底层高性能的数据操作方式。
+
+  ![image-20250820023429084](assets/image-20250820023429084.png)
+
+  1. 线程在调用 `read()` / `write()` 时不会阻塞，==如果没有数据，直接返回 0 或空结果。==
+
+  2. Channel + Selector + Buffer
+
+     核心组件：
+
+     1. **Channel**
+        1. 类似 BIO 的 Socket，但可以 **非阻塞**模式。
+        2. `SocketChannel`、`ServerSocketChannel`、`DatagramChannel` 等。
+     2. **Selector**
+        1. 就是 **事件轮询器**，一个线程可以注册多个 Channel，监听它们的 **读/写/连接/可写事件**。
+        2. 当某个 Channel 有事件发生时，Selector 会通知线程。
+     3. **Buffer**
+        1. 用来存放读写的数据。
+
+     ==NIO 返回 `0` 并不是数据丢了，而是“内核缓冲区此刻没新数据”。==
+
+     ==数据始终先进入 **内核 socket 缓冲区**，等你来取。==
+
+     ==TCP 本身保证可靠传输，不会因为你 `read` 慢一点就丢。==
+
+- AIO（Asynchronous IO） ：是 Java 1.7 之后引入的包，是 NIO 的升级版本，提供了异步非堵塞的 IO 操作方式，所以人们叫它 AIO（Asynchronous IO），异步 IO 是基于事件和回调机制实现的，也就是应用操作之后会直接返回，不会堵塞在那里，当后台处理完成，操作系统会通知相应的线程进行后续的操作。
+
+| 特性         | 同步 I/O                                                     | 异步 I/O                  |
+| ------------ | ------------------------------------------------------------ | ------------------------- |
+| 谁来搬数据   | 应用线程自己搬                                               | ==操作系统帮忙搬==        |
+| 调用是否阻塞 | 调用可能阻塞（BIO）或不阻塞（NIO），但最后还是要应用线程等/搬 | 调用立即返回，OS 异步处理 |
+| 应用线程角色 | 发请求 + 等待/搬运数据                                       | 只发请求，最后等通知      |
+| 效率         | 多线程下容易线程爆炸                                         | 高效，线程可专注业务逻辑  |
+
+**多线程假异步**：你雇了一个小弟（线程），让他在门口等外卖，你自己去忙别的。小弟拿到外卖再叫你。
+
+**真正 AIO**：你点外卖时告诉骑手“送到就放冰箱”，骑手送到后直接帮你放冰箱，然后发消息通知你，**根本不需要小弟**。
+
+#### NIO是怎么实现的？
+
+NIO是一种同步非阻塞的IO模型，所以也可以叫NON-BLOCKINGIO。同步是指线程不断轮询IO事件是否就绪，非阻塞是指线程在等待IO的时候，可以同时做其他任务。
+
+同步的核心就==Selector==（I/O多路复用），Selector代替了线程本身==轮询IO事件==，避免了阻塞同时减少了不必要的线程消耗；非阻塞的核心就是通道和缓冲区，当IO事件就绪时，可以通过==写到缓冲区，保证IO的成功==，而无需线程阻塞式地等待。
+
+NIO由一个专门的线程处理所有IO事件，并负责分发。事件驱动机制，事件到来的时候触发操作，不需要阻塞的监视事件。线程之间通过wait,notify通信，减少线程切换。
+
+NIO主要有三大核心部分：==Channel(通道)，Buffer(缓冲区), Selector==。传统IO基于字节流和字符流进行操作，而NIO基于Channel和Buffer(缓冲区)进行操作，数据总是从通道读取到缓冲区中，或者从缓冲区写入到通道中。
+
+Selector(选择区)用于监听多个通道的事件（比如：连接打开，数据到达）。因此，单个线程可以监听多个数据通道。
+
+![image-20250820024043346](assets/image-20250820024043346.png)
+
+#### 你知道有哪个框架用到NIO了吗？
+
+==Netty。==
+
+Netty 的 I/O 模型是基于非阻塞 I/O 实现的，底层依赖的是 NIO 框架的多路复用器 Selector。采用 epoll 模式后，只需要一个线程负责 Selector 的轮询。当有数据处于就绪状态后，需要一个事件分发器（Event Dispather），它负责将读写事件分发给对应的读写事件处理器（Event Handler）。事件分发器有两种设计模式：Reactor 和 Proactor，Reactor 采用同步 I/O， Proactor 采用异步 I/O。
+
+![image-20250820024544934](assets/image-20250820024544934.png)
+
+Reactor 实现相对简单，适合处理耗时短的场景，对于耗时长的 I/O 操作容易造成阻塞。Proactor 性能更高，但是实现逻辑非常复杂，适合图片或视频流分析服务器，目前主流的事件驱动模型还是依赖 select 或 epoll 来实现。
+
+### Native方法解释一下
+
+在Java中，native方法是一种特殊类型的方法，它允许Java代码调用外部的本地代码，即用==C、C++或其他语言编写的代码==。native关键字是Java语言中的一种声明，用于标记一个方法的实现将在外部定义。
+
+在Java类中，native方法看起来与其他方法相似，只是其方法体由native关键字代替，没有实际的实现代码。例如：
+
+```java
+public class NativeExample {
+    public native void nativeMethod();
+}
+```
+
+要实现native方法，你需要完成以下步骤：
+
+1. **生成JNI头文件**：使用javah工具从你的Java类生成C/C++的头文件，这个头文件包含了所有native方法的原型。
+2. **编写本地代码**：使用C/C++编写本地方法的实现，并确保方法签名与生成的头文件中的原型匹配。
+3. **编译本地代码**：将C/C++代码编译成动态链接库（DLL，在Windows上），共享库（SO，在Linux上）
+4. **加载本地库**：在Java程序中，使用System.loadLibrary()方法来加载你编译好的本地库，这样JVM就能找到并调用native方法的实现了。
