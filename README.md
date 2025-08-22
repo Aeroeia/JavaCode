@@ -1274,21 +1274,291 @@ public class NativeExample {
 List是有序的Collection，使用此接口能够精确的控制每个元素的插入位置，用户能根据索引访问List中元素。常用的实现List的类有==LinkedList，ArrayList，Vector，Stack==。
 
 - ArrayList是容量可变的==非线程安全==列表，其底层使用数组实现。当几何扩容时，会创建更大的数组，并把原数组复制到新数组。ArrayList支持对元素的快速随机访问，但插入与删除速度很慢。
-- LinkedList本质是一个双向链表，与ArrayList相比，，其插入和删除速度更快，但随机访问速度更慢。
+- LinkedList本质是一个==双向链表==，与ArrayList相比，，其插入和删除速度更快，但随机访问速度更慢。
 
 Set不允许存在重复的元素，与List不同，set中的元素是无序的。常用的实现有HashSet，LinkedHashSet和TreeSet。
 
-- HashSet通过HashMap实现，HashMap的Key即HashSet存储的元素，所有Key都是用相同的Value，一个名为PRESENT的Object类型常量。使用Key保证元素唯一性，但不保证有序性。由于HashSet是HashMap实现的，因此线程不安全。
-- LinkedHashSet继承自HashSet，通过LinkedHashMap实现，使用双向链表维护元素插入顺序。
-- TreeSet通过TreeMap实现的，添加元素到集合时按照比较规则将其插入合适的位置，保证插入后的集合仍然有序。
+- HashSet==通过HashMap实现==，HashMap的Key即HashSet存储的元素，所有Key都是用相同的Value，一个名为PRESENT的Object类型常量。使用Key保证元素唯一性，但不保证有序性。由于HashSet是HashMap实现的，因此线程不安全。
+- LinkedHashSet==继承自HashSet==，通过==LinkedHashMap==实现，使用双向链表维护元素插入顺序。
+- TreeSet通过==TreeMap==实现的，添加元素到集合时按照比较规则将其插入合适的位置，保证插入后的集合仍然有序。
 
-Map 是一个键值对集合，存储键、值和之间的映射。Key 无序，唯一；value 不要求有序，允许重复。Map 没有继承于 Collection 接口，从 Map 集合中检索元素时，只要给出键对象，就会返回对应的值对象。主要实现有TreeMap、HashMap、HashTable、LinkedHashMap、ConcurrentHashMap
+Map 是一个键值对集合，存储键、值和之间的映射。Key 无序，唯一；value 不要求有序，允许重复。==Map 没有继承于 Collection 接口==，从 Map 集合中检索元素时，只要给出键对象，就会返回对应的值对象。主要实现有TreeMap、HashMap、HashTable、LinkedHashMap、ConcurrentHashMap
 
-- HashMap：JDK1.8 之前 HashMap 由数组+链表组成的，数组是 HashMap 的主体，链表则是主要为了解决哈希冲突而存在的（“拉链法”解决冲突），JDK1.8 以后在解决哈希冲突时有了较大的变化，当链表长度大于阈值（默认为 8）时，将链表转化为红黑树，以减少搜索时间
-- LinkedHashMap：LinkedHashMap 继承自 HashMap，所以它的底层仍然是基于拉链式散列结构即由数组和链表或红黑树组成。另外，LinkedHashMap 在上面结构的基础上，增加了一条双向链表，使得上面的结构可以保持键值对的插入顺序。同时通过对链表进行相应的操作，实现了访问顺序相关逻辑。
+- HashMap：JDK1.8 之前 HashMap 由==数组+链表==组成的，数组是 HashMap 的主体，链表则是主要为了解决哈希冲突而存在的（“拉链法”解决冲突），JDK1.8 以后在解决哈希冲突时有了较大的变化，当链表长度大于阈值（默认为 8）时，将链表转化为==红黑树==，以减少搜索时间
+- LinkedHashMap：LinkedHashMap 继承自 ==HashMap==，所以它的底层仍然是基于拉链式散列结构即由数组和链表或红黑树组成。另外，LinkedHashMap 在上面结构的基础上，==增加了一条双向链表==，使得上面的结构可以保持键值对的插入顺序。同时通过对链表进行相应的操作，实现了访问顺序相关逻辑。
 - HashTable：数组+链表组成的，数组是 HashTable 的主体，链表则是主要为了解决哈希冲突而存在的
 - TreeMap：红黑树（自平衡的排序二叉树）
 - ConcurrentHashMap：Node数组+链表+红黑树实现，线程安全的（jdk1.8以前Segment锁，1.8以后volatile + CAS 或者 synchronized）
+
+------
+
+### 讲讲CAS
+
+#### 1️⃣ 什么是 CAS？
+
+CAS 全称是 **Compare And Swap**（比较并交换）。
+ 它是一种 **乐观锁** 思想的实现方式，广泛用于并发编程里保证线程安全。
+
+简单说：
+
+- 你有一个变量的值（比如 `10`）。
+- 线程想更新它时，先检查它的当前值是不是期望的值（比如还等于 `10`）。
+- 如果是，就把它更新为新值（比如 `11`）；如果不是，就说明在这期间有其他线程修改过了，更新失败，需要重试。
+
+------
+
+#### 2️⃣ 为什么要有 CAS？
+
+在多线程里：
+
+- 如果用 **synchronized**，会加锁 → 阻塞，性能差。
+- CAS 提供了一种 **无锁并发** 机制，不需要线程阻塞，就能实现安全更新。
+
+------
+
+#### 3️⃣ CAS 的流程（举例）
+
+假设一个变量 `count = 10`，线程要做 `count++` 操作。
+
+1. **读取当前值**：线程先读取到 `10`。
+2. **比较（Compare）**：检查内存里 `count` 现在是不是 `10`。
+3. **交换（Swap）**：如果是，就把它更新为 `11`；如果不是，就说明被别人改过了，不更新。
+
+如果失败 → 线程重新读取，继续尝试，直到成功。
+
+------
+
+#### 4️⃣ Java 中的 CAS
+
+在 Java 里，CAS 由 **`Unsafe` 类** 和 **CPU 的原子指令**（如 `cmpxchg`）实现。
+
+典型用法：
+
+```java
+import java.util.concurrent.atomic.AtomicInteger;
+
+public class CASDemo {
+    public static void main(String[] args) {
+        AtomicInteger count = new AtomicInteger(10);
+
+        // 期望值=10，更新值=11
+        boolean success = count.compareAndSet(10, 11);
+
+        System.out.println("更新成功了吗？ " + success); // true
+        System.out.println("当前值： " + count.get()); // 11
+    }
+}
+```
+
+这里 `compareAndSet(10, 11)` 就是 CAS 的过程。
+
+------
+
+#### 5️⃣ CAS 的问题
+
+虽然很高效，但 CAS 也有缺点：
+
+1. **ABA 问题**
+   - 比如一个值从 `A → B → A`，CAS 检查时发现还是 `A`，以为没变，其实中间被修改过。
+   - 解决方法：加版本号（`AtomicStampedReference`）。
+2. **自旋开销大**
+   - 如果竞争激烈，CAS 可能会一直失败 → 一直重试 → 消耗 CPU。
+3. **只能保证单个变量的原子操作**
+   - 多变量的原子操作就需要锁了。
+
+------
+
+#### 6️⃣ 总结
+
+- **CAS** = 无锁并发的一种实现 → "比较+交换"。
+- 核心 API：`AtomicInteger`、`compareAndSet`。
+- 优点：高效、非阻塞。
+- 缺点：有 ABA 问题、自旋开销大。
+
+------
+
+要不要我给你画一个 **CAS 的流程图**，直观展示“比较 → 成功更新 / 失败重试”的过程？
+
+###  ==Java中的线程安全的集合是什么？ 待仔细研究底层==
+
+在 ==java.util 包==中的线程安全的类主要 2 个，其他都是非线程安全的。
+
+- **Vector**：线程安全的==动态数组==，其内部方法基本都经过==synchronized==修饰，如果不需要线程安全，并不建议选择，毕竟同步是有额外开销的。Vector 内部是使用对象数组来保存数据，可以根据需要自动的增加容量，当数组已满时，会创建新的数组，并拷贝原有数组数据。
+- **Hashtable**：线程安全的==哈希表==，HashTable 的加锁方法是给每个方法加上 ==synchronized== 关键字，这样锁住的是整个 Table 对象，不支持 null 键和值，由于同步导致的性能开销，所以已经很少被推荐使用，如果要保证线程安全的哈希表，可以用ConcurrentHashMap。
+
+java.util.concurrent 包提供的都是线程安全的集合：
+
+并发Map：
+
+- **ConcurrentHashMap**：它与 HashTable 的主要区别是二者加锁粒度的不同，在**JDK1.7**，ConcurrentHashMap加的是分段锁，也就是Segment锁，每个Segment 含有整个 table 的一部分，这样不同分段之间的并发操作就互不影响。在**JDK 1.8** ，它取消了Segment字段，直接在table元素上加锁，实现对每一行进行加锁，进一步减小了并发冲突的概率。对于put操作，如果Key对应的数组元素为null，则==通过CAS==操作（Compare and Swap）将其设置为当前值。如果Key对应的数组元素（也即链表表头或者树的根元素）不为null，则对该元素使用 synchronized 关键字申请锁，然后进行操作。如果该 put 操作使得当前链表长度超过一定阈值，则将==该链表转换为红黑树==，从而提高寻址效率。
+- **ConcurrentSkipListMap**：实现了一个基于==SkipList（跳表）==算法的==可排序==的并发集合，SkipList是一种可以在对数预期时间内完成搜索、插入、删除等操作的数据结构，通过维护多个指向其他元素的“跳跃”链接来实现高效查找。
+
+并发Set：
+
+- **ConcurrentSkipListSet**：是线程安全的有序的集合。底层是使用==ConcurrentSkipListMap==实现。
+- **CopyOnWriteArraySet**：是线程安全的Set实现，它是线程安全的==无序==的集合，可以将它理解成线程安全的HashSet。有意思的是，CopyOnWriteArraySet和HashSet虽然都继承于共同的父类AbstractSet；但是，HashSet是通过“散列表”实现的，而CopyOnWriteArraySet则是通过“==动态数组==(CopyOnWriteArrayList)”实现的，并不是散列表。
+
+并发List：
+
+- **CopyOnWriteArrayList**：它是 ArrayList 的线程安全的变体，其中所有写操作（add，set等）都通过对底层数组进行==全新复制==来实现，允许存储 null 元素。即当对象进行写操作时，使用了==Lock锁==做同步处理，内部拷贝了原数组，并在新数组上进行添加操作，最后将新数组替换掉旧数组；若进行的读操作，则直接返回结果，操作过程中不需要进行同步。
+
+并发 Queue：
+
+- **ConcurrentLinkedQueue**：是一个适用于高并发场景下的队列，它通过==无锁的方式(CAS)==，实现了高并发状态下的高性能。通常，ConcurrentLinkedQueue 的性能要好于 BlockingQueue 。
+- **BlockingQueue**：与 ConcurrentLinkedQueue 的使用场景不同，BlockingQueue 的主要功能并不是在于提升高并发时的队列性能，而在于简化多线程间的数据共享。BlockingQueue 提供一种读写==阻塞==等待的机制，即如果消费者速度较快，则 BlockingQueue 则可能被清空，此时消费线程再试图从 BlockingQueue 读取数据时就会被阻塞。反之，如果生产线程较快，则 BlockingQueue 可能会被装满，此时，生产线程再试图向 BlockingQueue 队列装入数据时，便会被阻塞等待。
+
+并发 Deque：
+
+- **LinkedBlockingDeque**：是一个线程安全的双端队列实现。它的内部使用链表结构，每一个节点都维护了一个前驱节点和一个后驱节点。LinkedBlockingDeque 没有进行读写锁的分离，因此==同一时间只能有一个线程对其进行操作==
+- **ConcurrentLinkedDeque**：ConcurrentLinkedDeque是一种基于链接节点的无限并发链表。可以安全地并发执行插入、删除和访问操作。当许多线程同时访问一个公共集合时，ConcurrentLinkedDeque是一个合适的选择。
+
+## List
+
+![image-20250822084719290](assets/image-20250822084719290.png)
+
+常见的List集合（==非线程安全==）：
+
+- `ArrayList`基于==动态数组==实现，它允许快速的随机访问，即通过索引访问元素的时间复杂度为 O (1)。在添加和删除元素时，如果操作位置不是列表末尾，可能需要移动大量元素，性能相对较低。适用于需要频繁随机访问元素，而对插入和删除操作性能要求不高的场景，如数据的查询和展示等。
+- `LinkedList`基于==双向链表==实现，在插入和删除元素时，只需修改链表的指针，不需要移动大量元素，时间复杂度为 O (1)。但随机访问元素时，需要从链表头或链表尾开始遍历，时间复杂度为 O (n)。适用于需要频繁进行插入和删除操作的场景，如队列、栈等数据结构的实现，以及需要在列表中间频繁插入和删除元素的情况。
+
+常见的List集合（==线程安全==）：
+
+- `Vector`和`ArrayList`类似，也是基于==数组==实现。`Vector`中的方法大多是同步的，这使得它在多线程环境下可以保证数据的一致性，但在单线程环境下，由于同步带来的开销，性能会略低于`ArrayList`。
+- `CopyOnWriteArrayList`在对列表进行修改（如添加、删除元素）时，会==创建一个新的底层数组，将修改操作应用到新数组上==，而读操作仍然在原数组上进行，这样可以保证读操作不会被写操作阻塞，实现了==读写分离==，提高了并发性能。适用于读操作远远多于写操作的并发场景，如事件监听列表等，在这种场景下可以避免大量的锁竞争，提高系统的性能和响应速度。
+
+###  讲一下java里面list的几种实现，几种实现有什么不同？
+
+![image-20250822085353342](assets/image-20250822085353342.png)
+
+- Vector 是 Java 早期提供的线程安全的动态数组，如果不需要线程安全，并不建议选择，毕竟同步是有额外开销的。Vector 内部是使用==对象数组==来保存数据，可以根据需要自动的增加容量，当数组已满时，会创建新的数组，并拷贝原有数组数据。
+- ArrayList 是应用更加广泛的==动态数组==实现，它本身不是线程安全的，所以==性能要好==很多。与 Vector 近似，ArrayList 也是可以根据需要调整容量，不过两者的调整逻辑有所区别，Vector 在扩容时会提高 1 倍，而 ArrayList 则是==增加 50%==。
+- LinkedList 顾名思义是 Java 提供的==双向链表==，所以它不需要像上面两种那样调整容量，它也不是线程安全的。
+
+### list可以一边遍历一边修改元素吗？
+
+普通集合遍历中 **不能直接修改结构**，否则会报`ConcurrentModificationException`异常。
+
+使用 **Iterator** 可以安全删除当前元素；**ListIterator** 可以修改或添加元素。
+
+使用 **并发集合** 可以在遍历时修改，但行为可能不是完全同步可见。看到的是**遍历开始时的快照**
+
+###  list如何快速删除某个指定下标的元素？
+
+`ArrayList`提供了`remove(int index)`方法来删除指定下标的元素，该方法在删除元素后，会将后续元素向前移动，以填补被删除元素的位置。如果删除的是列表末尾的元素，==时间复杂度为 O (1)==；如果删除的是列表中间的元素，==时间复杂度为 O (n)==，n 为列表中元素的个数，因为==需要移动后续的元素==。示例代码如下：
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+public class ArrayListRemoveExample {
+    public static void main(String[] args) {
+        List<Integer> list = new ArrayList<>();
+        list.add(1);
+        list.add(2);
+        list.add(3);
+
+        // 删除下标为1的元素
+        list.remove(1);
+
+        System.out.println(list);
+    }
+}
+```
+
+`LinkedList`的`remove(int index)`方法也可以用来删除指定下标的元素。它需要先==遍历到指定下标位置，然后修改链表的指针来删除元素==。时间复杂度为 ==O (n)==，n 为要删除元素的下标。不过，如果已知要删除的元素是链表的头节点或尾节点，可以直接通过修改头指针或尾指针来实现删除，时间复杂度为 ==O (1)==。示例代码如下：
+
+```java
+import java.util.LinkedList;
+import java.util.List;
+
+public class LinkedListRemoveExample {
+    public static void main(String[] args) {
+        List<Integer> list = new LinkedList<>();
+        list.add(1);
+        list.add(2);
+        list.add(3);
+
+        // 删除下标为1的元素
+        list.remove(1);
+
+        System.out.println(list);
+    }
+}
+```
+
+`CopyOnWriteArrayList`的`remove`方法同样可以删除指定下标的元素。由于`CopyOnWriteArrayList`在写操作时会创建一个新的数组，所以删除操作的时间复杂度==取决于数组的复制速度==，通常为 O (n)，n 为数组的长度。但在并发环境下，它的删除操作不会影响读操作，具有较好的并发性能。示例代码如下：
+
+```java
+import java.util.concurrent.CopyOnWriteArrayList;
+
+public class CopyOnWriteArrayListRemoveExample {
+    public static void main(String[] args) {
+        CopyOnWriteArrayList<Integer> list = new CopyOnWriteArrayList<>();
+        list.add(1);
+        list.add(2);
+        list.add(3);
+
+        // 删除下标为1的元素
+        list.remove(1);
+
+        System.out.println(list);
+    }
+}
+```
+
+### ArrayList线程安全吗？把ArrayList变成线程安全有哪些方法？
+
+不是线程安全的，ArrayList变成线程安全的方式有：
+
+- 使用Collections类的synchronizedList方法将ArrayList包装成线程安全的List：
+
+```java
+List<String> synchronizedList = Collections.synchronizedList(arrayList);
+```
+
+- 使用CopyOnWriteArrayList类代替ArrayList，它是一个线程安全的List实现：
+
+```java
+CopyOnWriteArrayList<String> copyOnWriteArrayList = new CopyOnWriteArrayList<>(arrayList);
+```
+
+- 使用Vector类代替ArrayList，Vector是线程安全的List实现：
+
+```java
+Vector<String> vector = new Vector<>(arrayList);
+```
+
+### 为什么ArrayList不是线程安全的，具体来说是哪里不安全？
+
+在高并发添加数据下，ArrayList会暴露三个问题;
+
+- 部分值为null（我们并没有add null进去）
+- 索引越界异常
+- size与我们add的数量不符
+
+为了知道这三种情况是怎么发生的，ArrayList，add 增加元素的代码如下：
+
+```java
+public boolean add(E e) {
+        ensureCapacityInternal(size + 1);  // Increments modCount!!
+        elementData[size++] = e;
+        return true;
+    }
+```
+
+ensureCapacityInternal()这个方法的详细代码我们可以暂时不看，它的作用就是判断如果将当前的新元素加到列表后面，列表的elementData数组的大小是否满足，如果size + 1的这个需求长度大于了elementData这个数组的长度，那么就要对这个数组进行扩容。
+
+大体可以分为三步：
+
+- 判断数组需不需要扩容，如果需要的话，调用grow方法进行扩容；
+- 将数组的size位置设置值（因为数组的下标是从0开始的）；
+- 将当前集合的大小加1
+
+下面我们来分析三种情况都是如何产生的：
+
+- 部分值为null：当线程1走到了扩容那里发现当前size是9，而数组容量是10，所以不用扩容，这时候cpu让出执行权，线程2也进来了，发现size是9，而数组容量是10，所以不用扩容，这时候线程1继续执行，将数组下标索引为9的位置set值了，还没有来得及执行size++，这时候线程2也来执行了，又把数组下标索引为9的位置set了一遍，这时候两个先后进行size++，导致下标索引10的地方就为null了。 ==有待考究==
+- 索引越界异常：线程1走到扩容那里发现当前size是9，数组容量是10不用扩容，cpu让出执行权，线程2也发现不用扩容，这时候数组的容量就是10，而线程1 set完之后size++，这时候线程2再进来size就是10，数组的大小只有10，而你要设置下标索引为10的就会越界（数组的下标索引从0开始）；
+- size与我们add的数量不符：这个基本上每次都会发生，这个理解起来也很简单，因为size++本身就不是原子操作，可以分为三步：获取size的值，将size的值加1，将新的size值覆盖掉原来的，线程1和线程2拿到一样的size值加完了同时覆盖，就会导致一次没有加上，所以肯定不会与我们add的数量保持一致的；
 
 ### ArrayList并发问题
 
@@ -1416,7 +1686,7 @@ size++;                // 再自增
 
 - A：读到 `size=0` → 写 `elementData[0] = e1` → 准备 `size=1`
 - B：**稍晚一点**，这次可能读到了 **A 已经写回的 size=1**
-   → 写 `elementData[1] = e2` → 准备 `size=2`
+  → 写 `elementData[1] = e2` → 准备 `size=2`
 
 但因为竞争，假设最后写回的是 **A 的 size=1**（覆盖了 B 的 `2`）。
 
@@ -1437,5 +1707,70 @@ size++;                // 再自增
 1. **两个线程写同一位置** → 只留下一个元素，`size=1`
 2. **两个线程写不同位置** → 数组里 2 个元素，但 `size=1`（size 回退丢失更新）
 
-------
+### ArrayList的扩容机制说一下
 
+ArrayList在添加元素时，如果当前元素个数已经达到了内部数组的容量上限，就会触发扩容操作。ArrayList的扩容操作主要包括以下几个步骤：
+
+- 计算新的容量：一般情况下，新的容量会扩大为原容量的==1.5倍==（在JDK 10之后，扩容策略做了调整），然后检查是否超过了最大容量限制。
+- 创建新的数组：根据计算得到的新容量，创建一个新的更大的数组。
+- 将元素复制：将原来数组中的元素逐个==复制==到新数组中。
+- 更新引用：将ArrayList内部指向原数组的引用==指向新数组==。
+- 完成扩容：扩容完成后，可以继续添加新元素。
+
+ArrayList的扩容操作涉及到数组的复制和内存的重新分配，所以在频繁添加大量元素时，扩容操作可能会影响性能。为了减少扩容带来的性能损耗，可以在初始化ArrayList时预分配足够大的容量，避免频繁触发扩容操作。
+
+之所以扩容是 1.5 倍，是因为 1.5 可以充分利用移位操作，减少浮点数或者运算时间和运算次数。
+
+```java
+// 新容量计算
+int newCapacity = oldCapacity + (oldCapacity >> 1);
+```
+
+### 线程安全的 List， CopyonWriteArraylist是如何实现线程安全的
+
+CopyOnWriteArrayList底层也是通过一个数组保存数据，使用volatile关键字修饰数组，保证当前线程对数组对象重新赋值后，==其他线程可以及时感知到==。
+
+```java
+private transient volatile Object[] array;
+```
+
+在写入操作时，加了一把互斥锁ReentrantLock以保证线程安全。
+
+```java
+public boolean add(E e) {
+    //获取锁
+    final ReentrantLock lock = this.lock;
+    //加锁
+    lock.lock();
+    try {
+        //获取到当前List集合保存数据的数组
+        Object[] elements = getArray();
+        //获取该数组的长度（这是一个伏笔，同时len也是新数组的最后一个元素的索引值）
+        int len = elements.length;
+        //将当前数组拷贝一份的同时，让其长度加1
+        Object[] newElements = Arrays.copyOf(elements, len + 1);
+        //将加入的元素放在新数组最后一位，len不是旧数组长度吗，为什么现在用它当成新数组的最后一个元素的下标？建议自行画图推演，就很容易理解。
+        newElements[len] = e;
+        //替换引用，将数组的引用指向给新数组的地址
+        setArray(newElements);
+        return true;
+    } finally {
+        //释放锁
+        lock.unlock();
+    }
+}
+```
+
+看到源码可以知道写入新元素时，首先会先==将原来的数组拷贝一份并且让原来数组的长度+1后就得到了一个新数组==，新数组里的元素和旧数组的元素一样并且长度比旧数组多一个长度，然后将新加入的元素放置都在新数组最后一个位置后，用新数组的地址替换掉老数组的地址就能得到最新的数据了。
+
+在我们执行替换地址操作之前，读取的是老数组的数据，数据是有效数据；执行替换地址操作之后，读取的是新数组的数据，同样也是有效数据，而且使用该方式能比读写都加锁要更加的效率。
+
+现在我们来看读操作，==读是没有加锁的，所以读是一直都能读==
+
+```java
+public E get(int index) {
+    return get(getArray(), index);
+}
+```
+
+## Map
