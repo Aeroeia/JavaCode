@@ -2193,3 +2193,701 @@ ConcurrentHashMap使用这两种手段来保证线程安全主要是一种权衡
 - Hashtable的底层数据结构主要是**数组加上链表**，数组是主体，链表是解决hash冲突存在的。
 - HashTable是线程安全的，实现方式是**Hashtable的所有公共方法均采用synchronized关键字**，当一个线程访问同步方法，另一个线程也访问的时候，就会陷入阻塞或者轮询的状态。
 
+### Set
+
+#### Set集合有什么特点？如何实现key无重复的？
+
+- **set集合特点**：Set集合中的元素是唯一的，不会出现重复的元素。
+- **set实现原理**：Set集合通过内部的数据结构（如哈希表、红黑树等）来实现key的无重复。当向Set集合中插入元素时，会先根据元素的hashCode值来确定元素的存储位置，然后再通过equals方法来判断是否已经存在相同的元素，如果存在则不会再次插入，保证了元素的唯一性。
+
+#### 有序的Set是什么？记录插入顺序的集合是什么？
+
+- **有序的 Set 是TreeSet和LinkedHashSet**。TreeSet是基于红黑树实现，保证元素的自然顺序。LinkedHashSet是基于双重链表和哈希表的结合来实现元素的有序存储，保证元素添加的自然顺序
+- **记录插入顺序的集合通常指的是LinkedHashSet**，它不仅保证元素的唯一性，还可以保持元素的插入顺序。当需要在Set集合中记录元素的插入顺序时，可以选择使用LinkedHashSet来实现。
+
+# Java并发
+
+## 多线程
+
+###  java里面的线程和操作系统的线程一样吗？
+
+Java 底层会调用 ==pthread_create== 来创建线程，所以本质上 java 程序创建的线程，就是和操作系统线程是一样的，是 1 对 1 的线程模型。
+
+![image-20250826165451006](assets/image-20250826165451006.png)
+
+### 使用多线程要注意哪些问题？
+
+要保证多线程的程序是安全，不要出现数据竞争造成的数据混乱的问题。
+
+Java的线程安全在三个方面体现：
+
+- **原子性**：提供互斥访问，同一时刻只能有一个线程对数据进行操作，在Java中使用了==atomic==包（这个包提供了一些支持原子操作的类，这些类可以在多线程环境下保证操作的原子性）和==synchronized==关键字来确保原子性；
+
+- **可见性**：一个线程对主内存的修改可以及时地被其他线程看到，在Java中使用了==synchronized==和==volatile==这两个关键字确保可见性；
+
+- **有序性**：一个线程观察其他线程中的指令执行顺序，由于指令重排序，该观察结果一般杂乱无序，在Java中使用了happens-before原则来确保有序性。
+
+  | happens-before 规则                      | JVM 怎么保证？                                               |
+  | ---------------------------------------- | ------------------------------------------------------------ |
+  | **程序顺序规则**（同一线程内按代码顺序） | 编译器和 CPU **不能重排存在数据依赖的指令**（as-if-serial 语义），保证单线程内逻辑一致。 |
+  | **锁（monitor lock）规则**               | `synchronized` 的 **解锁** 操作会插入 **写屏障**（flush 出所有写），**加锁** 操作会插入 **读屏障**（清缓存重新读），确保释放锁前的写对获取锁后的线程可见。 |
+  | **volatile 规则**                        | `volatile 写`：编译器在前后插入 `StoreStore` 和 `StoreLoad` 屏障，保证写入主内存、禁止后续指令越过；`volatile 读`：编译器插入 `LoadLoad` 和 `LoadStore`，保证从主内存获取最新值，并禁止前后重排。 |
+  | **线程 start/join**                      | `start()` 内部会同步刷新父线程写入的变量，子线程启动时能读到；`join()` 内部通过 **锁/volatile** 确保主线程能看到子线程的所有结果。 |
+  | **final 字段规则**                       | 构造函数返回前，JVM 会禁止构造函数内对 `final` 字段写入与 this 引用逃逸之间的重排，确保对象发布后其它线程看不到“半初始化”。 |
+
+  **JMM 定义了规则**（happens-before）。
+
+  **编译器/JVM 负责插入屏障**。
+
+  **CPU 屏障指令保证可见性和顺序性**。
+
+### 保证数据的一致性有哪些方案呢？
+
+- **事务管理**：使用数据库事务来确保一组数据库操作要么全部成功提交，要么全部失败回滚。通过ACID（原子性、一致性、隔离性、持久性）属性，数据库事务可以保证数据的一致性。
+- **锁机制**：使用锁来实现对共享资源的互斥访问。在 Java 中，可以使用 synchronized 关键字、ReentrantLock 或其他锁机制来控制并发访问，从而避免并发操作导致数据不一致。
+- **版本控制**：通过乐观锁的方式，在更新数据时记录数据的版本信息，从而避免同时对同一数据进行修改，进而保证数据的一致性。
+
+###  线程的创建方式有哪些?
+
+> 1.继承Thread类
+
+这是最直接的一种方式，用户自定义类继承java.lang.Thread类，重写其run()方法，==run()方法中定义了线程执行的具体任务。创建该类的实例后，通过调用start()方法启动线程==。
+
+```java
+class MyThread extends Thread {
+    @Override
+    public void run() {
+        // 线程执行的代码
+    }
+}
+
+public static void main(String[] args) {
+    MyThread t = new MyThread();
+    t.start();
+}
+```
+
+采用继承Thread类方式
+
+- 优点: 编写简单，如果需要访问当前线程，无需使用Thread.currentThread ()方法，直接使用this，即可获得当前线程
+- 缺点:因为线程类已经继承了Thread类，所以不能再继承其他的父类
+
+> 2.实现Runnable接口
+
+如果一个类已经继承了其他类，就不能再继承Thread类，此时可以实现java.lang.Runnable接口。实现Runnable接口需要重写run()方法，然后==将此Runnable对象作为参数传递给Thread类的构造器==，创建Thread对象后调用其start()方法启动线程。
+
+```java
+class MyRunnable implements Runnable {
+    @Override
+    public void run() {
+        // 线程执行的代码
+    }
+}
+
+public static void main(String[] args) {
+    Thread t = new Thread(new MyRunnable());
+    t.start();
+}
+```
+
+采用实现Runnable接口方式：
+
+- 优点：线程类只是实现了Runable接口，还可以继承其他的类。在这种方式下，可以==多个线程共享同一个目标对象==，所以非常适合多个相同线程来处理同一份资源的情况，从而可以将CPU代码和数据分开，形成清晰的模型，较好地体现了面向对象的思想。
+- 缺点：编程稍微复杂，如果需要访问当前线程，必须使用Thread.currentThread()方法。
+
+> 1. 实现Callable接口与FutureTask
+
+java.util.concurrent.Callable接口类似于Runnable，但Callable的call()方法可以有返回值并且可以抛出异常。要执行Callable任务，需将它包装进一个FutureTask，因为Thread类的构造器只接受Runnable参数，而==FutureTask实现了Runnable接口。==
+
+```java
+class MyCallable implements Callable<Integer> {
+    @Override
+    public Integer call() throws Exception {
+        // 线程执行的代码，这里返回一个整型结果
+        return 1;
+    }
+}
+
+public static void main(String[] args) {
+    MyCallable task = new MyCallable();
+    FutureTask<Integer> futureTask = new FutureTask<>(task);
+    Thread t = new Thread(futureTask);
+    t.start();
+
+    try {
+        Integer result = futureTask.get();  // 获取线程执行结果
+        System.out.println("Result: " + result);
+    } catch (InterruptedException | ExecutionException e) {
+        e.printStackTrace();
+    }
+}
+```
+
+采用实现Callable接口方式：
+
+- 缺点：编程稍微复杂，如果需要访问当前线程，必须调用Thread.currentThread()方法。
+- 优点：线程只是实现Runnable或实现Callable接口，还可以继承其他类。这种方式下，多个线程可以共享一个target对象，非常适合多线程处理同一份资源的情形。
+
+> 1. 使用线程池（Executor框架）
+
+从Java 5开始引入的java.util.concurrent.ExecutorService和相关类提供了线程池的支持，这是一种更高效的线程管理方式，避免了频繁创建和销毁线程的开销。可以通过Executors类的静态方法创建不同类型的线程池。
+
+```java
+class Task implements Runnable {
+    @Override
+    public void run() {
+        // 线程执行的代码
+    }
+}
+
+public static void main(String[] args) {
+    ExecutorService executor = Executors.newFixedThreadPool(10);  // 创建固定大小的线程池
+    for (int i = 0; i < 100; i++) {
+        executor.submit(new Task());  // 提交任务到线程池执行
+    }
+    executor.shutdown();  // 关闭线程池
+}
+```
+
+采用线程池方式：
+
+- 缺点：程池增加了程序的复杂度，特别是当涉及线程池参数调整和故障排查时。错误的配置可能导致死锁、资源耗尽等问题，这些问题的诊断和修复可能较为复杂。
+- 优点：线程池可以重用预先创建的线程，避免了线程创建和销毁的开销，显著提高了程序的性能。对于需要快速响应的并发请求，线程池可以迅速提供线程来处理任务，减少等待时间。并且，线程池能够有效控制运行的线程数量，防止因创建过多线程导致的系统资源耗尽（如内存溢出）。通过合理配置线程池大小，可以最大化CPU利用率和系统吞吐量。
+
+### 怎么启动线程 ？
+
+- 通过Thread类的**start()。**自动调用的run方法(继承Thread或者实现runnable)，**注意直接调用run方法无法开启线程，只是单纯调用方法** 
+- 通过executor的submit/execute方法submit可以传入Runnable或Callable接口，传入Callable接口可以==通过get获取返回值== 而execute只能传入Runable 无法获取返回值
+
+### 如何等待线程执行完成
+
+- 普通Thread通过==join==方法等待线程执行完成
+
+- 实现了Callable的Thread通过==get==方法
+
+- executor通过==submit==方法返回Future对象后通过==get==方法
+
+- 通过==CountDownLatch==
+
+  ```java
+  CountDownLatch latch = new CountDownLatch(1);
+  
+  executor.execute(() -> {
+      try {
+          System.out.println("任务执行");
+      } finally {
+          latch.countDown(); // 任务完成时释放
+      }
+  });
+  
+  latch.await(); // 等待任务完成
+  System.out.println("任务完成，继续执行");
+  ```
+
+### 如何停止一个线程的运行?
+
+主要有这些方法：
+
+1. **interrup()**
+
+   - **异常法停止**：线程调用interrupt()方法后，在线程的run方法中判断当前对象的interrupted()状态，如果是中断状态则抛出异常，达到中断线程的效果。
+
+   - **在沉睡中停止**：先将线程sleep，然后调用interrupt标记中断状态，interrupt会将阻塞状态的线程中断。会抛出中断异常，达到停止线程的效果
+
+     | 线程状态                         | interrupt() 作用                                             | 是否抛异常 |
+     | -------------------------------- | ------------------------------------------------------------ | ---------- |
+     | 阻塞（sleep/wait/join/阻塞队列） | JVM 检测到中断标志后，会立即抛出 `InterruptedException` 并清除中断状态 | ✅ 抛出     |
+     | 运行中 / 普通循环                | 线程仍然执行代码，中断标志被设置，但 JVM 不会抛异常          | ❌ 不抛     |
+
+2. **stop()**
+
+   - **stop()暴力停止**：线程调用stop()方法会被暴力停止，方法已弃用，该方法会有不好的后果：强制让线程停止有可能使一些请理性的工作得不到完成。
+
+3. **Future.cancel()**
+
+   ```java
+   public class FutureCancelDemo {
+       public static void main(String[] args) {
+           ExecutorService executor = Executors.newSingleThreadExecutor();
+           Future<?> future = executor.submit(() -> {
+               while (!Thread.currentThread().isInterrupted()) {
+                   System.out.println("Task running...");
+                   try {
+                       Thread.sleep(1000);
+                   } catch (InterruptedException e) {
+                       System.out.println("Task interrupted.");
+                       Thread.currentThread().interrupt();
+                   }
+               }
+           });
+   
+           try {
+               Thread.sleep(3000);
+               future.cancel(true); // true表示尝试中断任务线程
+           } catch (InterruptedException e) {
+               Thread.currentThread().interrupt();
+           } finally {
+               executor.shutdown();
+           }
+       }
+   }
+   ```
+
+4. 结合资源关闭操作
+
+   ```java
+   public class SocketHandler implements Runnable {
+       private ServerSocket serverSocket;
+   
+       public SocketHandler(ServerSocket serverSocket) {
+           this.serverSocket = serverSocket;
+       }
+   
+       @Override
+       public void run() {
+           try {
+               // serverSocket.accept()阻塞时无法响应中断
+               while (!Thread.currentThread().isInterrupted()) {
+                   Socket socket = serverSocket.accept();
+                   // 处理连接...
+               }
+           } catch (IOException e) {
+               if (Thread.currentThread().isInterrupted()) {
+                   System.out.println("Thread stopped by interrupt.");
+               }
+           }
+       }
+   
+       // 特殊关闭方法（销毁资源）
+       public void stop() {
+           try {
+               serverSocket.close(); // 关闭资源使accept()抛出异常
+           } catch (IOException e) {
+               System.out.println("Error closing socket: " + e);
+           }
+       }
+   }
+   ```
+
+每个线程都一个与之关联的布尔属性来表示其中断状态，中断状态的初始值为false，当一个线程被其它线程调用`Thread.interrupt()`方法中断时，会根据实际情况做出响应。
+
+### Java线程的状态有哪些？
+
+![image-20250826212636089](assets/image-20250826212636089.png)
+
+| 线程状态      | 解释                                                         |
+| ------------- | ------------------------------------------------------------ |
+| NEW           | 尚未启动的线程状态，即线程创建，**还未调用start方法**        |
+| RUNNABLE      | **就绪状态**（调用start，等待调度）+**正在运行**             |
+| BLOCKED       | **等待监视器锁**时，陷入阻塞状态                             |
+| WAITING       | 等待状态的线程正在**等待**另一线程执行特定的操作（如notify） |
+| TIMED_WAITING | 具有**指定等待时间**的等待状态                               |
+| TERMINATED    | 线程完成执行，**终止状态**                                   |
+
+---
+
+### 多线程wait/notify await/signal
+
+好，我们来详细梳理一下 **`wait`、`notify`、`notifyAll`**（Object 方法）和 **`await`、`signal`、`signalAll`**（`java.util.concurrent.locks.Condition` 方法）在 Java 线程中的使用区别和原理。
+
+------
+
+#### 1. Object 的 wait / notify / notifyAll
+
+##### **1.1 核心概念**
+
+- `wait()`：让当前线程 **进入等待状态**，并 **释放当前对象锁**
+- `notify()`：唤醒 **一个正在等待该对象锁的线程**
+- `notifyAll()`：唤醒 **所有等待该对象锁的线程**
+
+> 注意：这三个方法必须在 **同步块或同步方法** 中调用，否则会抛 `IllegalMonitorStateException`。
+
+------
+
+##### **1.2 基本用法示例（生产者-消费者）**
+
+```java
+class Resource {
+    private int data;
+    private boolean hasData = false;
+
+    public synchronized void produce(int value) throws InterruptedException {
+        while (hasData) {
+            wait(); // 等待消费者消费
+        }
+        data = value;
+        hasData = true;
+        System.out.println("生产: " + data);
+        notify(); // 唤醒消费者
+    }
+
+    public synchronized int consume() throws InterruptedException {
+        while (!hasData) {
+            wait(); // 等待生产者生产
+        }
+        hasData = false;
+        System.out.println("消费: " + data);
+        notify(); // 唤醒生产者
+        return data;
+    }
+}
+
+public class Demo {
+    public static void main(String[] args) {
+        Resource r = new Resource();
+
+        new Thread(() -> {
+            try {
+                for (int i = 0; i < 5; i++) r.produce(i);
+            } catch (InterruptedException e) {}
+        }).start();
+
+        new Thread(() -> {
+            try {
+                for (int i = 0; i < 5; i++) r.consume();
+            } catch (InterruptedException e) {}
+        }).start();
+    }
+}
+```
+
+- `wait()` 会 **释放锁并挂起线程**
+- `notify()` 会 **唤醒一个等待线程**，但它必须等到 **当前同步块退出** 才能拿到锁执行
+
+------
+
+#### 2. Lock + Condition 的 await / signal / signalAll
+
+`java.util.concurrent.locks.Condition` 是 **Lock 的增强版**，功能和 Object 的 wait/notify 类似，但更灵活。
+
+##### **2.1 核心方法**
+
+| 方法          | 功能                   |
+| ------------- | ---------------------- |
+| `await()`     | 当前线程等待，并释放锁 |
+| `signal()`    | 唤醒一个等待的线程     |
+| `signalAll()` | 唤醒所有等待的线程     |
+
+> 需要配合 `Lock` 使用，而不是 `synchronized`
+
+------
+
+##### **2.2 使用示例**
+
+```java
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
+
+class Resource {
+    private int data;
+    private boolean hasData = false;
+    private final ReentrantLock lock = new ReentrantLock();
+    private final Condition condition = lock.newCondition();
+
+    public void produce(int value) throws InterruptedException {
+        lock.lock();
+        try {
+            while (hasData) {
+                condition.await(); // 等待消费者
+            }
+            data = value;
+            hasData = true;
+            System.out.println("生产: " + data);
+            condition.signal(); // 唤醒消费者
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public int consume() throws InterruptedException {
+        lock.lock();
+        try {
+            while (!hasData) {
+                condition.await(); // 等待生产者
+            }
+            hasData = false;
+            System.out.println("消费: " + data);
+            condition.signal(); // 唤醒生产者
+            return data;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+- 相比 `synchronized + wait/notify`：
+  - `Condition` 可以有多个条件队列
+  - `await()` 可以响应中断 (`InterruptedException`)
+  - 更加灵活，可精细控制唤醒策略
+
+------
+
+#### 核心注意点
+
+1. **wait/notify 必须在同步块内调用**
+2. **await/signal 必须在 lock.lock() / unlock() 内调用**
+3. **wait / await 会释放锁，notify / signal 不释放锁**
+4. **唤醒线程后，线程会先尝试重新获取锁**，才能继续执行
+
+------
+
+✅ **总结**
+
+| 机制             | 阻塞方法 | 唤醒方法             | 锁机制        | 特点                             |
+| ---------------- | -------- | -------------------- | ------------- | -------------------------------- |
+| Object           | wait()   | notify()/notifyAll() | synchronized  | 简单，锁和条件绑定在对象上       |
+| Lock + Condition | await()  | signal()/signalAll() | ReentrantLock | 灵活，可多个条件队列，可响应中断 |
+
+> 简单理解：
+>
+> - `wait` / `await` → **挂起并释放锁**
+> - `notify` / `signal` → **唤醒线程，等待锁可用后执行**
+
+------
+
+==多用于消息队列==
+
+### sleep 和 wait的区别是什么？
+
+| **特性** | `sleep()`                  | `wait()`                           |
+| -------- | -------------------------- | ---------------------------------- |
+| 所属类   | `Thread` 类（静态方法）    | `Object` 类（实例方法）            |
+| 锁释放   | ❌                          | ✅                                  |
+| 使用前提 | 任意位置调用               | ==必须在同步块内（持有锁）==       |
+| 唤醒机制 | 超时自动恢复               | 需 `notify()`/`notifyAll()` 或超时 |
+| 设计用途 | 暂停线程执行，不涉及锁协作 | 线程间协调，释放锁让其他线程工作   |
+
+- **所属分类的不同**：sleep 是 `Thread` 类的静态方法，可以在任何地方直接通过 `Thread.sleep()` 调用，无需依赖对象实例。wait 是 `Object` 类的实例方法，这意味着必须通过对象实例来调用。
+- **锁释放的情况**：`Thread.sleep()` 在调用时，线程会暂停执行指定的时间，但不会释放持有的对象锁。也就是说，在 `sleep` 期间，其他线程无法获得该线程持有的锁。`Object.wait()`：调用该方法时，线程会释放持有的对象锁，进入等待状态，直到其他线程调用相同对象的 `notify()` 或 `notifyAll()` 方法唤醒它
+- **使用条件**：sleep 可在任意位置调用，无需事先获取锁。 wait 必须在同步块或同步方法内调用（即线程需持有该对象的锁），否则抛出 `IllegalMonitorStateException`。
+- **唤醒机制**：sleep 休眠时间结束后，线程 自动恢复 到就绪状态，等待CPU调度。wait 需要其他线程调用相同对象的 `notify()` 或 `notifyAll()` 方法才能被唤醒。`notify()` 会随机唤醒一个在该对象上等待的线程，而 `notifyAll()` 会唤醒所有在该对象上等待的线程。
+
+### sleep会释放cpu吗？
+
+是的，调用 `Thread.sleep()` 时，==线程会释放 CPU==，但不会释放持有的锁。
+
+**当线程调用** `sleep()` **后，会主动让出 CPU 时间片**，进入 `TIMED_WAITING` 状态。此时操作系统会触发调度，将 CPU 分配给其他处于就绪状态的线程。这样其他线程（无论是需要同一锁的线程还是不相关线程）便有机会执行。
+
+`sleep()` 不会释放线程已持有的任何锁（如 `synchronized` 同步代码块或方法中获取的锁）。因此，如果有其他线程试图获取同一把锁，它们仍会被阻塞，直到原线程退出同步代码块。
+
+### blocked和waiting有啥区别
+
+区别如下：
+
+- **触发条件**:线程进入BLOCKED状态通常是因为试图获取一个对象的锁（monitor lock），==但该锁已经被另一个线程持有==。这通常发生在尝试进入synchronized块或方法时，如果锁已被占用，则线程将被阻塞直到锁可用。线程进入WAITING状态是因为它正在等待另一个线程执行某些操作，例如调用==Object.wait()方法、Thread.join()方法或LockSupport.park()方法==。在这种状态下，线程将不会消耗CPU资源，并且不会参与锁的竞争。
+
+![img](https://cdn.xiaolincoding.com//picgo/93a0d1531ea1271770686b9e91664a9c.png)
+
+- **唤醒机制**:当一个线程被阻塞等待锁时，一旦锁被释放，线程将有机会重新尝试获取锁。如果锁此时未被其他线程获取，那么==线程可以从BLOCKED状态变为RUNNABLE状态==。线程在WAITING状态中需要被显式唤醒。例如，如果线程调用了Object.wait()，那么它必须等待另一个线程调用同一对象上的Object.notify()或Object.notifyAll()方法才能被唤醒。
+
+所以，BLOCKED和WAITING两个状态最大的区别有两个：
+
+- BLOCKED是锁竞争失败后被被动触发的状态，WAITING是人为的主动触发的状态
+- BLCKED的唤醒时自动触发的，而WAITING状态是必须要通过特定的方法来主动唤醒
+
+### notify 选择哪个线程?
+
+notify在源码的注释中说到notify选择唤醒的线程是==任意的==，但是依赖于具体实现的jvm。
+
+![image-20240725230457096](https://cdn.xiaolincoding.com//picgo/image-20240725230457096.png)
+
+JVM有很多实现，比较流行的就是==hotspot==，hotspot对notofy()的实现并不是我们以为的随机唤醒,，而是“先进先出”的顺序唤醒。
+
+### 线程间通信方式有哪些？
+
+1、Object 类的 wait()、notify() 和 notifyAll() 方法。这是 Java 中最基础的线程间通信方式，基于对象的监视器（锁）机制。
+
+- `wait()`：使当前线程进入等待状态，直到其他线程调用该对象的 `notify()` 或 `notifyAll()` 方法。
+- `notify()`：唤醒在此对象监视器上等待的单个线程。
+- `notifyAll()`：唤醒在此对象监视器上等待的所有线程。
+
+```java
+class SharedObject {
+    public synchronized void consumerMethod() throws InterruptedException {
+        while (/* 条件不满足 */) {
+            wait();
+        }
+        // 执行相应操作
+    }
+
+    public synchronized void producerMethod() {
+        // 执行相应操作
+        notify(); // 或者 notifyAll()
+    }
+}
+```
+
+2、`Lock` 和 `Condition` 接口。`Lock` 接口提供了比 `synchronized` 更灵活的锁机制，`Condition` 接口则配合 `Lock` 实现线程间的等待 / 通知机制。
+
+- `await()`：使当前线程进入等待状态，直到被其他线程唤醒。
+- `signal()`：唤醒一个等待在该 `Condition` 上的线程。
+- `signalAll()`：唤醒所有等待在该 `Condition` 上的线程。
+
+```java
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+class SharedResource {
+    private final Lock lock = new ReentrantLock();
+    private final Condition condition = lock.newCondition();
+
+    public void consumer() throws InterruptedException {
+        lock.lock();
+        try {
+            while (/* 条件不满足 */) {
+                condition.await();
+            }
+            // 执行相应操作
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void producer() {
+        lock.lock();
+        try {
+            // 执行相应操作
+            condition.signal(); // 或者 signalAll()
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+3、`volatile` 关键字。`volatile` 关键字用于保证变量的可见性，即当一个变量被声明为 `volatile` 时，它会保证对该变量的写操作会立即刷新到主内存中，而读操作会从主内存中读取最新的值。
+
+```java
+class VolatileExample {
+    private volatile boolean flag = false;
+
+    public void writer() {
+        flag = true;
+    }
+
+    public void reader() {
+        while (!flag) {
+            // 等待
+        }
+        // 执行相应操作
+    }
+}
+```
+
+4、CountDownLatch。`CountDownLatch` 是一个同步辅助类，它允许一个或多个线程等待其他线程完成操作。
+
+- `CountDownLatch(int count)`：构造函数，指定需要等待的线程数量。
+- `countDown()`：减少计数器的值。
+- `await()`：使当前线程等待，直到计数器的值为 0。
+
+```java
+import java.util.concurrent.CountDownLatch;
+
+public class CountDownLatchExample {
+    public static void main(String[] args) throws InterruptedException {
+        int threadCount = 3;
+        CountDownLatch latch = new CountDownLatch(threadCount);
+
+        for (int i = 0; i < threadCount; i++) {
+            new Thread(() -> {
+                try {
+                    // 执行任务
+                    System.out.println(Thread.currentThread().getName() + " 完成任务");
+                } finally {
+                    latch.countDown();
+                }
+            }).start();
+        }
+
+        latch.await();
+        System.out.println("所有线程任务完成");
+    }
+}
+```
+
+5、CyclicBarrier。`CyclicBarrier` 是一个同步辅助类，它允许一组线程相互等待，直到所有线程都到达某个公共屏障点。
+
+- `CyclicBarrier(int parties, Runnable barrierAction)`：构造函数，指定参与的线程数量和所有线程到达屏障点后要执行的操作。
+- `await()`：使当前线程等待，直到所有线程都到达屏障点。
+
+```java
+import java.util.concurrent.CyclicBarrier;
+
+public class CyclicBarrierExample {
+    public static void main(String[] args) {
+        int threadCount = 3;
+        CyclicBarrier barrier = new CyclicBarrier(threadCount, () -> {
+            System.out.println("所有线程都到达屏障点");
+        });
+
+        for (int i = 0; i < threadCount; i++) {
+            new Thread(() -> {
+                try {
+                    // 执行任务
+                    System.out.println(Thread.currentThread().getName() + " 到达屏障点");
+                    barrier.await();
+                    // 继续执行后续任务
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }).start();
+        }
+    }
+}
+```
+
+> 每个线程打印“到达屏障点”
+>
+> 调用 `barrier.await()` → 阻塞
+>
+> 当第 3 个线程也调用 `await()` 时，屏障被触发：
+>
+> - 先执行 barrier action（打印 `"所有线程都到达屏障点"`）
+> - 然后唤醒所有等待的线程
+>
+> 线程恢复执行“后续任务”部分（这里你没有写任何代码）
+
+6、Semaphore。`Semaphore` 是一个计数信号量，它可以控制同时访问特定资源的线程数量。
+
+- `Semaphore(int permits)`：构造函数，指定信号量的初始许可数量。
+- `acquire()`：获取一个许可，如果没有可用许可则阻塞。
+- `release()`：释放一个许可。
+
+```java
+import java.util.concurrent.Semaphore;
+
+public class SemaphoreExample {
+    public static void main(String[] args) {
+        int permitCount = 2;
+        Semaphore semaphore = new Semaphore(permitCount);
+
+        for (int i = 0; i < 5; i++) {
+            new Thread(() -> {
+                try {
+                    semaphore.acquire();
+                    System.out.println(Thread.currentThread().getName() + " 获得许可");
+                    // 执行任务
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } finally {
+                    semaphore.release();
+                    System.out.println(Thread.currentThread().getName() + " 释放许可");
+                }
+            }).start();
+        }
+    }
+}
+```
+
+> 线程启动时 `acquire()`：
+>
+> - 前 2 个线程能直接拿到许可，不阻塞。
+> - 第 3、4、5 个线程会阻塞等待。
+>
+> 当有线程 `release()`：
+>
+> - 计数器 +1 → 如果有阻塞线程，就唤醒一个。
+> - 被唤醒的线程重新尝试 `acquire()`，拿到许可继续执行。
