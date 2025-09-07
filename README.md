@@ -1238,9 +1238,7 @@ public class SingleTon {
 | 应用线程角色 | 发请求 + 等待/搬运数据                                       | 只发请求，最后等通知      |
 | 效率         | 多线程下容易线程爆炸                                         | 高效，线程可专注业务逻辑  |
 
-**多线程假异步**：你雇了一个小弟（线程），让他在门口等外卖，你自己去忙别的。小弟拿到外卖再叫你。
-
-**真正 AIO**：你点外卖时告诉骑手“送到就放冰箱”，骑手送到后直接帮你放冰箱，然后发消息通知你，**根本不需要小弟**。
+==NIO优势体现在高并发长连接上==
 
 ------
 
@@ -3488,6 +3486,10 @@ public class DeadlockExample {
 
 ## 线程池
 
+**阻塞等待** → 线程挂起 → 异步完成唤醒线程
+
+**回调任务** → 调用线程不阻塞 → 异步完成提交任务 → 线程池执行
+
 ###  介绍一下线程池的工作原理
 
 线程池是为了减少频繁的创建线程和销毁线程带来的性能损耗，线程池的工作原理如下图：
@@ -3507,3 +3509,1340 @@ public class DeadlockExample {
            ├─ 未达最大线程数 → 执行任务
            └─ 已达最大线程数 → 执行拒绝策略
 ```
+
+------
+
+### 线程池的参数有哪些？
+
+线程池的构造函数有7个参数：![img](https://cdn.xiaolincoding.com//picgo/1719104064073-534db922-6f8c-416c-9d56-6f2a5892896d.webp)
+
+- **corePoolSize**：线程池核心线程数量。默认情况下，==线程池中线程的数量如果 <= corePoolSize，那么即使这些线程处于空闲状态，那也不会被销毁。==
+- **maximumPoolSize**：限制了线程池能创建的**最大线程总数**（包括核心线程和非核心线程），当 `corePoolSize` 已满 并且 尝试将新任务加入阻塞队列失败（即队列已满）并且 当前线程数 < `maximumPoolSize`，就会创建新线程执行此任务，但是当 `corePoolSize` 满 并且 队列满 并且 线程数已达 `maximumPoolSize` 并且 又有新任务提交时，就会触发拒绝策略。
+
+```text
+提交新任务
+      |
+      v
+当前线程数 < corePoolSize?  ---是---> 创建新线程执行此任务
+      |
+     否
+      |    尝试将任务加入工作队列
+      |          |
+      |<---成功加入？--是---> 任务排队等待执行 (结束，不创建新线程)
+      |          |
+      |         否 (队列已满)
+      |
+      v
+当前线程数 < maximumPoolSize?  ---是---> 创建新线程执行此任务 (注意：是执行刚提交的这个任务！)
+      |
+     否
+      |
+      v
+执行拒绝策略
+```
+
+- **keepAliveTime**：当线程池中线程的数量==大于corePoolSize==，并且某个线程的空闲时间超过了keepAliveTime，那么这个线程就会被销毁。
+- **unit**：就是keepAliveTime时间的单位。
+- **workQueue**：工作队列。当没有空闲的线程执行新任务时，该任务就会被放入工作队列中，等待执行。
+- **threadFactory**：线程工厂。可以用来==给线程取名字等等==
+- **handler**：拒绝策略。当一个新任务交给线程池，如果此时线程池中有空闲的线程，就会直接执行，如果没有空闲的线程，就会将该任务加入到阻塞队列中，如果阻塞队列满了，就会创建一个新线程，从阻塞队列头部取出一个任务来执行，并将新任务加入到阻塞队列末尾。如果当前线程池中线程的数量等于maximumPoolSize，就不会创建新线程，就会去执行拒绝策略
+
+###  线程池工作队列满了有哪些拒接策略？
+
+当线程池的任务队列满了之后，线程池会执行指定的拒绝策略来应对，常用的四种拒绝策略包括：CallerRunsPolicy、AbortPolicy、DiscardPolicy、DiscardOldestPolicy，此外，还可以通过实现RejectedExecutionHandler接口来自定义拒绝策略。
+
+四种预置的拒绝策略：
+
+- CallerRunsPolicy，使用线程池的调用者所在的线程去执行被拒绝的任务，除非线程池被停止或者线程池的任务队列已有空缺。
+- AbortPolicy，直接抛出一个任务被线程池拒绝的异常。
+- DiscardPolicy，不做任何处理，静默拒绝提交的任务。
+- DiscardOldestPolicy，抛弃最老的任务，然后执行该任务。
+- 自定义拒绝策略，通过实现接口可以自定义任务拒绝策略。
+
+### 有线程池参数设置的经验吗？
+
+核心线程数（corePoolSize）设置的经验：
+
+- CPU密集型：corePoolSize = CPU核数 + 1（避免过多线程竞争CPU）
+- IO密集型：corePoolSize = CPU核数 x 2（或更高，具体看IO等待时间）
+
+场景一：电商场景，特点瞬时高并发、任务处理时间短，线程池的配置可设置如下：
+
+```java
+new ThreadPoolExecutor(
+    16,                     // corePoolSize = 16（假设8核CPU × 2）
+    32,                     // maximumPoolSize = 32（突发流量扩容）
+    10, TimeUnit.SECONDS,   // 非核心线程空闲10秒回收
+    new SynchronousQueue<>(), // 不缓存任务，直接扩容线程
+    new AbortPolicy()       // 直接拒绝，避免系统过载
+);
+```
+
+说明：
+
+- 使用`SynchronousQueue`确保任务直达线程，避免队列延迟。
+- 拒绝策略快速失败，前端返回“活动火爆”提示，结合降级策略（如缓存预热）。
+
+场景二：后台数据处理服务，特点稳定流量、任务处理时间长（秒级）、允许一定延迟，线程池的配置可设置如下：
+
+```java
+new ThreadPoolExecutor(
+    8,                      // corePoolSize = 8（8核CPU）
+    8,                      // maximumPoolSize = 8（禁止扩容，避免资源耗尽）
+    0, TimeUnit.SECONDS,    // 不回收线程
+    new ArrayBlockingQueue<>(1000), // 有界队列，容量1000
+    new CallerRunsPolicy()  // 队列满后由调用线程执行
+);
+```
+
+说明：
+
+- 固定线程数避免资源波动，队列缓冲任务，拒绝策略兜底。
+- 配合监控告警（如队列使用率>80%触发扩容）。
+
+场景三：微服务HTTP请求处理，特点IO密集型、依赖下游服务响应时间，线程池的配置可设置如下：
+
+```java
+new ThreadPoolExecutor(
+    16,                     // corePoolSize = 16（8核 × 2）
+    64,                     // maximumPoolSize = 64（应对慢下游）
+    60, TimeUnit.SECONDS,   // 非核心线程空闲60秒回收
+    new LinkedBlockingQueue<>(200), // 有界队列容量200
+    new CustomRetryPolicy() // 自定义拒绝策略（重试或降级）
+);
+```
+
+说明：
+
+- 根据下游RT（响应时间）调整线程数，队列防止瞬时峰值。
+- 自定义拒绝策略将任务暂存Redis，异步重试。
+
+------
+
+### 核心线程数设置为0可不可以？
+
+==可以，当核心线程数为0的时候，会创建一个非核心线程进行执行。==
+
+从下面的源码也可以看到，当核心线程数为 0 时，来了一个任务之后，会先将任务添加到任务队列，同时也会判断当前工作的线程数是否为 0，如果为 0，则会创建线程来执行线程池的任务。time设置为0则不销毁
+
+![image-20240820113849549](https://cdn.xiaolincoding.com//picgo/image-20240820113849549.png)
+
+------
+
+### 线程池种类有哪些？
+
+- ScheduledThreadPool：可以==设置定期的执行任务==，它支持定时或周期性执行任务，比如每隔 10 秒钟执行一次任务，我通过这个实现类设置定期执行任务的策略。==线程策略和FixedThreadPool类似==
+
+  ```java
+  ScheduledExecutorService scheduledThreadPool = Executors.newScheduledThreadPool(4);
+  ```
+
+  ```java
+  import java.util.concurrent.*;
+  
+  public class ScheduledExecutorExample {
+      public static void main(String[] args) throws InterruptedException {
+          // 创建一个定时任务线程池
+          ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+  
+          // 延迟 3 秒后执行任务
+          scheduler.schedule(() -> {
+              System.out.println("任务延迟执行！");
+          }, 3, TimeUnit.SECONDS);
+  
+          // 延迟 0 秒后每 5 秒执行一次任务
+          scheduler.scheduleAtFixedRate(() -> {
+              System.out.println("周期性任务执行！");
+          }, 0, 5, TimeUnit.SECONDS);
+  
+          // 延迟 0 秒后每 5 秒执行一次任务，执行间隔从上一次任务结束时开始
+          scheduler.scheduleWithFixedDelay(() -> {
+              System.out.println("固定延迟任务执行！");
+          }, 0, 5, TimeUnit.SECONDS);
+  
+          // 让主线程等一段时间，以便观察定时任务执行情况
+          Thread.sleep(20000);
+  
+          // 关闭线程池
+          scheduler.shutdown();
+      }
+  }
+  
+  ```
+
+  
+
+- FixedThreadPool：它的==核心线程数和最大线程数是一样的==，所以可以把它看作是固定线程数的线程池，它的特点是线程池中的线程数除了初始阶段需要从 0 开始增加外，之后的线程数量就是固定的，就算任务数超过线程数，线程池也不会再创建更多的线程来处理任务，而是会把超出线程处理能力的任务放到任务队列中进行等待。而且就算任务队列满了，到了本该继续增加线程数的时候，由于它的最大线程数和核心线程数是一样的，所以也无法再增加新的线程了。
+
+  ```java
+  ExecutorService fixedThreadPool = Executors.newFixedThreadPool(4);
+  ```
+
+  
+
+- CachedThreadPool：可以称作可缓存线程池，它的特点在于==线程数是几乎可以无限增加的==（实际最大可以达到 Integer.MAX_VALUE，为 2^31-1，这个数非常大，所以基本不可能达到），而当线程闲置时还可以对线程进行回收。也就是说该线程池的线程数量不是固定不变的，当然它也有一个用于存储提交任务的队列，但这个队列是 SynchronousQueue，队列的容量为0，==实际不存储任何任务==，它只负责对任务进行中转和传递，所以效率比较高。
+
+  ```java
+  ExecutorService cachedThreadPool = Executors.newCachedThreadPool();
+  ```
+
+  
+
+- SingleThreadExecutor：==它会使用唯一的线程去执行任务==，原理和 FixedThreadPool 是一样的，只不过这里线程只有一个，如果线程在执行任务的过程中发生异常，线程池也会重新创建一个线程来执行后续的任务。这种线程池由于只有一个线程，所以非常适合用于所有任务都需要按被提交的顺序依次执行的场景，而前几种线程池不一定能够保障任务的执行顺序等于被提交的顺序，因为它们是多线程并行执行的。
+
+- SingleThreadScheduledExecutor：它实际和 ScheduledThreadPool 线程池非常相似，它只是 ScheduledThreadPool 的一个特例，内部只有一个线程
+
+------
+
+### 线程池一般是怎么用的？
+
+Java 中的 Executors 类定义了一些快捷的工具方法，来帮助我们快速创建线程池。==《阿里巴巴 Java 开发手册》中提到，禁止使用这些方法来创建线程池，而应该手动 new ThreadPoolExecutor 来创建线程池==。这一条规则的背后，是大量血淋淋的生产事故，最典型的就是 newFixedThreadPool 和 newCachedThreadPool，可能因为==资源耗尽导致 OOM 问题==。
+
+所以，不建议使用 Executors 提供的两种快捷的线程池，原因如下：
+
+- 我们需要根据自己的场景、并发情况来评估线程池的几个核心参数，包括核心线程数、最大线程数、线程回收策略、工作队列的类型，以及拒绝策略，确保线程池的工作行为符合需求，一般都需要设置有界的工作队列和可控的线程数。
+- 任何时候，都应该为自定义线程池==指定有意义的名称，以方便排查问题==。当出现线程数量暴增、线程死锁、线程占用大量 CPU、线程执行出现异常等问题时，我们往往会抓取线程栈。此时，有意义的线程名称，就可以方便我们定位问题。
+
+除了建议手动声明线程池以外，我还建议用一些监控手段来观察线程池的状态。线程池这个组件往往会表现得任劳任怨、默默无闻，除非是出现了拒绝策略，否则压力再大都不会抛出一个异常。如果我们能提前观察到线程池队列的积压，或者线程数量的快速膨胀，往往可以提早发现并解决问题。
+
+### 线程池中shutdown ()，shutdownNow()这两个方法有什么作用？
+
+从下面的源码【高亮】注释可以很清晰的看出两者的区别：
+
+- shutdown使用了以后会==置状态为SHUTDOWN==，正在执行的任务会==继续执行下去==，==没有被执行的则中断==。此时，则不能再往线程池中添加任何任务，否则将会抛出 ==RejectedExecutionException== 异常
+- 而 shutdownNow 为STOP，并试图==停止所有正在执行的线程，不再处理还在池队列中等待的任务==，当然，它会返回那些未执行的任务。 它试图终止线程的方法是通过调用 ==Thread.interrupt() 方法==来实现的，但是这种方法的作用有限，==如果线程中没有sleep 、wait、Condition、定时锁等应用, interrupt()方法是无法中断当前的线程的==。所以，ShutdownNow()并不代表线程池就一定立即就能退出，它可能必须要等待所有正在执行的任务都执行完成了才能退出。
+
+**shutdown 源码：**
+
+```java
+public void shutdown() {
+	final ReentrantLock mainLock = this.mainLock;
+	mainLock.lock();
+	try {
+		checkShutdownAccess();
+		// 高亮
+		advanceRunState(SHUTDOWN);
+		interruptIdleWorkers();
+		onShutdown();
+	} finally {
+		mainLock.unlock();
+	}
+	tryTerminate();
+}
+```
+
+**shutdownNow 源码：**
+
+```java
+public List<Runnable> shutdownNow() {
+	List<Runnable> tasks;
+	final ReentrantLock mainLock = this.mainLock;
+	mainLock.lock();
+	try {
+		checkShutdownAccess();
+		// 高亮
+		advanceRunState(STOP);
+		interruptWorkers();
+		// 高亮
+		tasks = drainQueue();
+	} finally {
+		mainLock.unlock();
+	}
+	tryTerminate();
+	// 高亮
+	return tasks;
+}
+```
+
+------
+
+### 提交给线程池中的任务可以被撤回吗？
+
+可以，当向线程池提交任务时，会得到一个`Future`对象。这个`Future`对象提供了几种方法来管理任务的执行，包括取消任务。
+
+==取消任务的主要方法是`Future`接口中的`cancel(boolean mayInterruptIfRunning)`方法==。这个方法尝试取消执行的任务。参数`mayInterruptIfRunning`指示是否允许中断正在执行的任务。如果设置为`true`，则表示如果任务已经开始执行，那么允许中断任务；如果设置为`false`，任务已经开始执行则不会被中断。
+
+```java
+public interface Future<V> {
+    // 是否取消线程的执行
+    boolean cancel(boolean mayInterruptIfRunning);
+    // 线程是否被取消
+    boolean isCancelled();
+    //线程是否执行完毕
+    boolean isDone();
+      // 立即获得线程返回的结果
+    V get() throws InterruptedException, ExecutionException;
+      // 延时时间后再获得线程返回的结果
+    V get(long timeout, TimeUnit unit)
+        throws InterruptedException, ExecutionException, TimeoutException;
+}
+```
+
+取消线程池中任务的方式，代码如下，通过 future 对象的 cancel(boolean) 函数来定向取消特定的任务。
+
+```java
+public static void main(String[] args) {
+        ExecutorService service = Executors.newSingleThreadExecutor();
+        Future future = service.submit(new TheradDemo());
+
+        try {
+          // 可能抛出异常
+            future.get();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }finally {
+          //终止任务的执行
+            future.cancel(true);
+        }
+```
+
+## 场景
+
+###  多线程打印奇偶数，怎么控制打印的顺序
+
+可以利用wait()和notify()来控制线程的执行顺序。
+
+**写法一**
+
+```java
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+
+public class Main {
+    private static final Object lock = new Object();
+    private static int count = 1;
+    private static final int MAX_COUNT = 10;
+
+    public static void main(String[] args) {
+        Runnable printOdd = () -> {
+            while (true) {
+                synchronized (lock) {
+                    while (count <= MAX_COUNT && count % 2 == 0) {
+                        try {
+                            lock.wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    if (count > MAX_COUNT) {
+                        break;
+                    }
+                    System.out.println(Thread.currentThread().getName() + ": " + count++);
+                    lock.notify();
+                }
+            }
+        };
+
+        Runnable printEven = () -> {
+            while (true) {
+                synchronized (lock) {
+                    while (count <= MAX_COUNT && count % 2 == 1) {
+                        try {
+                            lock.wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    if (count > MAX_COUNT) {
+                        break;
+                    }
+                    System.out.println(Thread.currentThread().getName() + ": " + count++);
+                    lock.notify();
+
+                }
+            }
+        };
+
+        Thread oddThread = new Thread(printOdd, "OddThread");
+        Thread evenThread = new Thread(printEven, "EvenThread");
+
+        oddThread.start();
+        evenThread.start();
+    }
+
+}
+```
+
+这种写法频繁发生锁竞争
+
+**写法二**
+
+```java
+public class PrintOddEven {
+    private static final Object lock = new Object();
+    private static int count = 1;
+    private static final int MAX_COUNT = 10;
+
+    public static void main(String[] args) {
+        Runnable printOdd = () -> {
+            synchronized (lock) {
+                while (count <= MAX_COUNT) {
+                    if (count % 2 != 0) {
+                        System.out.println(Thread.currentThread().getName() + ": " + count++);
+                        lock.notify();
+                    } else {
+                        try {
+                            lock.wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            }
+        };
+
+        Runnable printEven = () -> {
+            synchronized (lock) {
+                while (count <= MAX_COUNT) {
+                    if (count % 2 == 0) {
+                        System.out.println(Thread.currentThread().getName() + ": " + count++);
+                        lock.notify();
+                    } else {
+                        try {
+                            lock.wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            }
+        };
+
+        Thread oddThread = new Thread(printOdd, "OddThread");
+        Thread evenThread = new Thread(printEven, "EvenThread");
+
+        oddThread.start();
+        evenThread.start();
+    }
+}
+```
+
+------
+
+### 单例模型既然已经用了synchronized，为什么还要在加volatile？
+
+使用 `synchronized` 和 `volatile` 一起，可以创建一个既线程安全又能正确初始化的单例模式，避免了多线程环境下的各种潜在问题。这是一种比较完善的线程安全的单例模式实现方式，尤其适用于高并发环境。
+
+```java
+public class Singleton {
+    private static volatile Singleton instance;
+
+    private Singleton() {}
+
+    public static Singleton getInstance() {
+        if (instance == null) {
+            synchronized (Singleton.class) {
+                if (instance == null) {
+                    instance = new Singleton();
+                }
+            }
+        }
+        return instance;
+    }
+}
+```
+
+`synchronized` 关键字的作用用于确保在多线程环境下，只有一个线程能够进入同步块（这里是 `synchronized (Singleton.class)`）。在创建单例对象时，通过 `synchronized` 保证了创建过程的线程安全性，避免多个线程同时创建多个单例对象。
+
+`volatile` ==确保了对象引用的可见性和创建过程的有序性==，避免了由于指令重排序而导致的错误。
+
+==`instance = new Singleton();` 这行代码并不是一个原子操作==，它实际上可以分解为以下几个步骤：
+
+- 分配内存空间。
+- 实例化对象。
+- 将对象引用赋值给 `instance`。
+
+由于 Java 内存模型允许编译器和处理器对指令进行重排序，在没有 `volatile` 的情况下，可能会出现重排序，例如先==将对象引用赋值给 `instance`，但对象的实例化操作尚未完成==。
+
+这样，其他线程在检查 `instance == null` 时，会认为单例已经创建，从而得到一个未完全初始化的对象，导致错误。
+
+`volatile` 可以保证变量的可见性和禁止指令重排序。它确保对 `instance` 的修改对所有线程都是可见的，并且保证了上述三个步骤按顺序执行，避免了在单例创建过程中因指令重排序而导致的问题。
+
+------
+
+### 假设两个线程并发读写同一个整型变量，初始值为零，每个线程加 50 次，结果可能是什么？
+
+在没有任何同步机制的情况下，两个线程并发对同一个整型变量进行 50 次加 1 操作，最终结果可能是 100，也可能小于 100，最坏的结果是 50，==也就是最终的结果可能是在 [50, 100]== 。
+
+小于 100 情况的分析，由于对整型变量的 `num++` 操作不是原子操作，==它实际上包含了三个步骤：读取变量的值、将值加 1、将新值写回变量==。在多线程环境下，可能会出现线程安全问题。例如，线程 1 和线程 2 同时读取了变量的当前值，然后各自将其加 1，最后都将相同的新值写回变量，这就导致了一次加 1 操作的丢失。这种情况会多次发生，最终结果就会小于 100。
+
+**解决方案**
+
+第一种方式：通过`AtomicInteger`
+
+```java
+import java.util.concurrent.atomic.AtomicInteger;
+
+public class AtomicIntegerAddition {
+    private static AtomicInteger num = new AtomicInteger(0);
+
+    public static void main(String[] args) throws InterruptedException {
+        Thread thread1 = new Thread(() -> {
+            for (int i = 0; i < 50; i++) {
+                num.incrementAndGet();
+            }
+        });
+
+        Thread thread2 = new Thread(() -> {
+            for (int i = 0; i < 50; i++) {
+                num.incrementAndGet();
+            }
+        });
+
+        thread1.start();
+        thread2.start();
+
+        thread1.join();
+        thread2.join();
+
+        System.out.println("最终结果: " + num.get());
+    }
+}
+```
+
+第二种方式：通过 `synchronized` 关键字或 `ReentrantLock` 确保操作的互斥性，代码如下：
+
+```java
+public class SynchronizedAddition {
+    private static int num = 0;
+    private static final Object lock = new Object();
+
+    public static void main(String[] args) throws InterruptedException {
+        Thread thread1 = new Thread(() -> {
+            for (int i = 0; i < 50; i++) {
+                synchronized (lock) {
+                    num++;
+                }
+            }
+        });
+
+        Thread thread2 = new Thread(() -> {
+            for (int i = 0; i < 50; i++) {
+                synchronized (lock) {
+                    num++;
+                }
+            }
+        });
+
+        thread1.start();
+        thread2.start();
+
+        thread1.join();
+        thread2.join();
+
+        System.out.println("最终结果: " + num);
+    }
+}
+```
+
+# JVM
+
+## 内存模型
+
+### JVM内存模型说一下
+
+根据 JDK 8 规范，JVM 运行时内存共分为==虚拟机栈、堆、元空间、程序计数器、本地方法栈五个部分==。还有一部分内存叫直接内存，属于操作系统的本地内存，也是可以直接操作的。
+
+![img](https://cdn.xiaolincoding.com//picgo/1713516291293-ce6ee4e7-c5a6-4395-9ee7-4ec1c014b206.webp)
+
+JVM的内存结构主要分为以下几个部分：
+
+1. **程序计数器**：可以看作是==当前线程所执行的字节码的行号指示器==，用于==存储当前线程正在执行的 Java 方法的 JVM 指令地址==。如果线程执行的是 Native 方法，计数器值为 null。是唯一一个在 Java 虚拟机规范中没有规定任何 OutOfMemoryError 情况的区域，生命周期与线程相同。
+
+2. **Java 虚拟机栈**：每个线程都有自己独立的 Java 虚拟机栈，==生命周期与线程相同==。每个方法在执行时都会创建一个栈帧，用于存储局部变量表、操作数栈、动态链接、方法出口等信息。可能会抛出 StackOverflowError 和 OutOfMemoryError 异常。
+
+3. **本地方法栈**：与 Java 虚拟机栈类似，==主要为虚拟机使用到的 Native 方法服务==，在 HotSpot 虚拟机中和 Java 虚拟机栈合二为一。本地方法执行时也会创建栈帧，同样可能出现 StackOverflowError 和 OutOfMemoryError 两种错误。
+
+4. **Java 堆**：是 JVM 中==最大的一块内存区域，被所有线程共享==，在虚拟机启动时创建，用于存放对象实例。从内存回收角度，堆被划分为新生代和老年代，新生代又分为 Eden 区和两个 Survivor 区（From Survivor 和 To Survivor）。如果在堆中没有内存完成实例分配，并且堆也无法扩展时会抛出 OutOfMemoryError 异常。
+
+5. **方法区（元空间）**：在 JDK 1.8 及以后的版本中，==方法区被元空间取代，使用本地内存==。用于存储已被虚拟机==加载的类信息、常量、静态变量==等数据。虽然方法区被描述为堆的逻辑部分，但有 “非堆” 的别名。方法区可以选择不实现垃圾收集，内存不足时会抛出 OutOfMemoryError 异常。
+
+   > 永久代在 **堆内存**中，大小受 `-XX:PermSize` / `-XX:MaxPermSize` 限制。
+   >
+   > 元空间使用 **本地内存（Native Memory）**，大小默认只受物理内存限制，可用 `-XX:MetaspaceSize` / `-XX:MaxMetaspaceSize` 配置。
+
+- **运行时常量池**：是方法区的一部分，用于存放编译期生成的各种字面量和符号引用，具有动态性，运行时也可将新的常量放入池中。当无法申请到足够内存时，会抛出 OutOfMemoryError 异常。
+- **直接内存**：不属于 JVM 运行时数据区的一部分，通过 NIO 类引入，是一种堆外内存，可以显著提高 I/O 性能。直接内存的使用受到本机总内存的限制，若分配不当，可能导致 OutOfMemoryError 异常。
+
+------
+
+### JVM内存模型里的堆和栈有什么区别？
+
+- **用途**：栈主要用于存储局部变量、方法调用的参数、方法返回地址以及一些临时数据。每当一个方法被调用，一个栈帧（stack frame）就会在栈中创建，用于存储该方法的信息，当方法执行完毕，栈帧也会被移除。堆用于存储对象的实例（包括类的实例和数组）。当你使用`new`关键字创建一个对象时，对象的实例就会在堆上分配空间。
+- **生命周期**：==栈中的数据具有确定的生命周期==，当一个方法调用结束时，其对应的栈帧就会被销毁，栈中存储的局部变量也会随之消失。==堆中的对象生命周期不确定==，对象会在垃圾回收机制（Garbage Collection, GC）检测到对象不再被引用时才被回收。
+- **存取速度**：栈的存取速度通常比堆快，因为==栈遵循先进后出（LIFO, Last In First Out）的原则==，操作简单快速。堆的存取速度相对较慢，因为对象在堆上的分配和回收需要更多的时间，而且垃圾回收机制的运行也会影响性能。
+- **存储空间**：==栈的空间相对较小，且固定，由操作系统管理==。当栈溢出时，通常是因为递归过深或局部变量过大。==堆的空间较大，动态扩展，由JVM管理==。堆溢出通常是由于创建了太多的大对象或未能及时回收不再使用的对象。
+- **可见性**：==栈中的数据对线程是私有的==，每个线程有自己的栈空间。==堆中的数据对线程是共享的==，所有线程都可以访问堆上的对象。
+
+------
+
+### 堆分为哪几部分呢？
+
+Java堆（Heap）是Java虚拟机（JVM）中内存管理的一个重要区域，主要用于存放对象实例和数组。随着JVM的发展和不同垃圾收集器的实现，堆的具体划分可能会有所不同，但通常可以分为以下几个部分：
+
+![img](https://cdn.xiaolincoding.com//picgo/1719974471041-14f6ed7f-358b-426a-b614-2501ceae0035.png)
+
+- **新生代（Young Generation）**:新生代分为Eden Space和S urvivor Space。==在Eden Space中， 大多数新创建的对象首先存放在这里==。Eden区相对较小，==当Eden区满时，会触发一次Minor GC==（新生代垃圾回收）。在Survivor Spaces中，通常分为两个相等大小的区域，称为S0（Survivor 0）和S1（Survivor 1）。在每次Minor GC后，存活下来的对象会被移动到其中一个Survivor空间，以继续它们的生命周期。==这两个区域轮流充当对象的中转站，帮助区分短暂存活的对象和长期存活的对象。==
+- **老年代（Old Generation/Tenured Generation）**:==存放过一次或多次Minor GC仍存活的对象会被移动到老年代==。老年代中的对象生命周期较长，因此Major GC（也称为Full GC，涉及老年代的垃圾回收）发生的频率相对较低，但其执行时间通常比Minor GC长。老年代的空间通常比新生代大，==以存储更多的长期存活对象==。
+- **元空间（Metaspace）**:从Java 8开始，永久代（Permanent Generation）被元空间取代，用于存储类的元数据信息，如类的结构信息（如字段、方法信息等）。元空间并不在Java堆中，而是使用本地内存，这解决了永久代容易出现的内存溢出问题。
+- **大对象区（Large Object Space / Humongous Objects）**:在某些JVM实现中（如G1垃圾收集器），为大对象分配了专门的区域，称为大对象区或Humongous Objects区域。==大对象是指需要大量连续内存空间的对象，如大数组。这类对象直接分配在老年代==，以避免因频繁的年轻代晋升而导致的内存碎片化问题。
+
+------
+
+### 程序计数器的作用，为什么是私有的？
+
+Java程序是支持多线程一起运行的，==多个线程一起运行的时候cpu会有一个调动器组件给它们分配时间片==，比如说会给线程1分给一个时间片，它在时间片内如果它的代码没有执行完，它就会把线程1的状态执行一个暂存，切换到线程2去，执行线程2的代码，等线程2的代码执行到了一定程度，线程2的时间片用完了，再切换回来，再继续执行线程1剩余部分的代码。
+
+我们考虑一下，如果在线程切换的过程中，下一条指令执行到哪里了，是不是还是会用到我们的程序计数器啊。每个线程都有自己的程序计数器，因为它们各自执行的代码的指令地址是不一样的呀，所以每个线程都应该有自己的程序计数器。
+
+------
+
+### 方法区中的方法的执行过程？
+
+当程序中通过对象或类直接调用某个方法时，主要包括以下几个步骤：
+
+- **解析方法调用**：JVM会根据方法的符号引用==(class文件的字符信息)==找到实际的方法地址==(运行后确定的具体内存地址)==（如果之前没有解析过的话）。
+- **栈帧创建**：在调用一个方法前，JVM会在当前线程的Java虚拟机栈中为该方法分配一个新的栈帧，用于存储==局部变量表、操作数栈、动态链接、方法出口==等信息。
+- **执行方法**：执行方法内的字节码指令，涉及的操作可能包括局部变量的读写、操作数栈的操作、跳转控制、对象创建、方法调用等。
+- **返回处理**：方法执行完毕后，可能会返回一个结果给调用者，并清理当前栈帧，恢复调用者的执行环境。
+
+------
+
+### 方法区中还有哪些东西？
+
+《深入理解Java虚拟机》书中对方法区（Method Area）存储内容描述如下：它用于存储已被虚拟机加载的**类型信息、常量、静态变量、即时编译器编译后的代码缓存**等。
+
+- 类信息：包括类的结构信息、类的访问修饰符、父类与接口等信息。
+- 常量池：存储类和接口中的常量，包括字面值常量、符号引用，以及运行时常量池。==常量池本体在方法区，**字符串对象迁移到了堆**。==
+- 静态变量：存储类的静态变量，这些变量在类初始化的时候被赋值。 ==**字段定义在方法区，实际值存在堆里**。==
+- 方法字节码：存储类的方法字节码，即编译后的代码。
+- 符号引用：存储类和方法的符号引用，是一种直接引用不同于直接引用的引用类型。
+- 运行时常量池：存储着在类文件中的常量池数据，在类加载后在方法区生成该运行时常量池。
+- 常量池缓存：用于提升类加载的效率，将常用的常量缓存起来方便使用。
+
+#### 运行时常量池里有什么？
+
+当类被 JVM 加载后，**class 文件常量池会被搬到内存**，形成 **运行时常量池**（Runtime Constant Pool，属于方法区的一部分）。
+ 此时存放的东西包括：
+
+1. **从 class 文件常量池拷贝过来的数据**
+   - 字面量（数字、字符串）
+   - 符号引用（类名、方法名、字段名）
+2. **解析后的直接引用**（解析时生成，替换符号引用）
+   - 字段引用 → 对象内存的偏移量
+   - 方法引用 → 方法表索引 / 入口地址
+   - 类引用 → 指向类元数据的指针
+3. **运行时生成的新常量**
+   - `String.intern()` 产生的字符串会放入运行时常量池（实际上在堆的字符串常量池里，但引用信息在运行时常量池中记录）。
+   - 编译期常量折叠（比如 `final int a = 3 + 4;`）的结果。
+
+------
+
+### String s = new String（“abc”）执行过程中分别对应哪些内存区域？
+
+首先，我们看到这个代码中有一个new关键字，我们知道**new**指令是创建一个类的实例对象并完成加载初始化的，因此这个字符串对象是在**运行期**才能确定的，创建的字符串对象是在**堆内存上**。
+
+其次，在String的构造方法中传递了一个字符串abc，由于这里的abc是被final修饰的属性，所以它是一个字符串常量。在首次构建这个对象时，JVM拿字面量"abc"去字符串常量池试图获取其对应String对象的引用。于是在堆中创建了一个"abc"的String对象，并将其引用保存到字符串常量池中，然后返回；
+
+所以，**如果abc这个字符串常量不存在，则创建两个对象，分别是abc这个字符串常量，以及new String这个实例对象。如果abc这字符串常量存在，则只会创建一个对象**。
+
+------
+
+### 引用类型有哪些？有什么区别？
+
+引用类型主要分为强软弱虚四种：
+
+- 强引用指的就是代码中普遍存在的赋值方式，比如A a = new A()这种。强引用关联的对象，永远不会被GC回收。
+- 软引用可以用SoftReference来描述，指的是那些有用但是不是必须要的对象。系统在发生内存溢出前会对这类引用的对象进行回收。
+- 弱引用可以用WeakReference来描述，他的强度比软引用更低一点，弱引用的对象下一次GC的时候一定会被回收，而不管内存是否足够。
+- 虚引用也被称作幻影引用，是最弱的引用关系，可以用PhantomReference来描述，他必须和ReferenceQueue一起使用，同样的当发生GC的时候，虚引用也会被回收。可以用虚引用来管理堆外内存。
+
+非常好的问题 👍，你已经把 **四种引用的定义**讲得很清楚了，我来给你补上 **具体代码示例 + 使用场景**，这样更直观。
+
+#### 🔥 1. 强引用（Strong Reference）
+
+这是 Java 中最常见的引用方式：
+
+```java
+public class StrongReferenceDemo {
+    public static void main(String[] args) {
+        Object obj = new Object(); // 强引用
+        Object obj2 = obj;         // 强引用
+        obj = null;                // 释放一个引用
+        System.gc();               // 请求GC
+
+        // obj2 依然指向对象，所以不会被回收
+        System.out.println("强引用对象依然存活: " + obj2);
+    }
+}
+```
+
+👉 **场景**：绝大部分日常代码都在用强引用。只要有强引用存在，对象就不会被 GC。
+
+#### 🌿 2. 软引用（Soft Reference）
+
+适合做**缓存**，在内存紧张时才会被回收。
+
+```java
+import java.lang.ref.SoftReference;
+
+public class SoftReferenceDemo {
+    public static void main(String[] args) {
+        SoftReference<byte[]> softRef = new SoftReference<>(new byte[10 * 1024 * 1024]); // 10MB
+
+        System.out.println("第一次获取: " + softRef.get()); // 有数据
+
+        // 模拟内存紧张
+        try {
+            byte[] b = new byte[100 * 1024 * 1024]; // 100MB
+        } catch (OutOfMemoryError e) {
+            System.out.println("内存紧张");
+        }
+
+        System.gc(); // 建议GC
+        System.out.println("第二次获取: " + softRef.get()); // 可能是 null
+    }
+}
+```
+
+👉 **场景**：
+
+- 图片缓存
+- 本地对象缓存（比如 `Caffeine` 内部就可能用到软引用）
+
+#### 🍂 3. 弱引用（Weak Reference）
+
+只要发生 GC，弱引用的对象一定会被回收。
+
+```java
+import java.lang.ref.WeakReference;
+
+public class WeakReferenceDemo {
+    public static void main(String[] args) {
+        WeakReference<String> weakRef = new WeakReference<>(new String("弱引用对象"));
+
+        System.out.println("GC前: " + weakRef.get());
+
+        System.gc(); // 一旦GC发生
+        System.out.println("GC后: " + weakRef.get()); // 一定是 null
+    }
+}
+```
+
+👉 **场景**：
+
+- `ThreadLocalMap` 的 key 使用弱引用，避免内存泄漏。
+
+  > 我主动创建的ThreadLocal对象是强引用 创建的同时会在threadloals创建一个弱引用key并存入threadlocl的值 当threadlocal不被使用时就会回收key
+
+  > threadlocalmap使用弱引用作为key的原因是entry是强引用吗 然后如果key也是强引用key就不会被回收
+
+- 区别：即使存在弱引用，只要没有强引用指向对象，它就可以被回收
+
+- WeakHashMap：key 被弱引用持有，当 key 不再使用时，可以被 GC 自动清理。
+
+#### 👻 4. 虚引用（Phantom Reference）
+
+对象本身拿不到，用来跟踪对象被回收的时机。
+
+```java
+import java.lang.ref.PhantomReference;
+import java.lang.ref.ReferenceQueue;
+
+public class PhantomReferenceDemo {
+    public static void main(String[] args) throws Exception {
+        ReferenceQueue<String> refQueue = new ReferenceQueue<>();
+        PhantomReference<String> phantomRef = new PhantomReference<>(new String("虚引用对象"), refQueue);
+
+        System.out.println("get(): " + phantomRef.get()); // 永远是 null
+
+        System.gc();
+        Thread.sleep(1000); // 等待GC
+
+        // 虚引用对象被回收时，会进入引用队列
+        System.out.println("从队列取: " + refQueue.poll());
+    }
+}
+```
+
+👉 **场景**：
+
+- 管理 **堆外内存**（比如 DirectByteBuffer 就用虚引用来释放堆外内存）。
+- 在对象被回收前收到通知（类似钩子）。
+
+#### ✅ 总结场景对照
+
+| 引用类型 | 特点                       | 典型场景                 |
+| -------- | -------------------------- | ------------------------ |
+| 强引用   | 永不回收                   | 日常对象引用             |
+| 软引用   | 内存不足才回收             | 缓存（如图片缓存）       |
+| 弱引用   | 一旦 GC 就回收             | ThreadLocal、WeakHashMap |
+| 虚引用   | 不影响回收，需配合队列使用 | 管理堆外内存、回收前通知 |
+
+------
+
+### 内存泄漏和内存溢出的理解？
+
+**内存泄露**：内存泄漏是指程序在运行过程中不再使用的对象仍然被引用，而无法被垃圾收集器回收，从而导致可用内存逐渐减少。虽然在Java中，垃圾回收机制会自动回收不再使用的对象，但如果有对象仍被不再使用的引用持有，垃圾收集器无法回收这些内存，最终可能导致程序的内存使用不断增加。
+
+内存泄露常见原因：
+
+- **静态集合**：使用静态数据结构（如`HashMap`或`ArrayList`）存储对象，且未清理。
+- **事件监听**：未取消对事件源的监听，导致对象持续被引用。
+- **线程**：未停止的线程可能持有对象引用，无法被回收。
+
+==**对象不再使用，但仍然被 GC Roots 可达**，无法被垃圾回收器回收。==
+
+内存溢出：内存溢出是指Java虚拟机（JVM）在申请内存时，无法找到足够的内存，最终引发`OutOfMemoryError`。==这通常发生在堆内存不足以存放新创建的对象时。==
+
+内存溢出常见原因：
+
+- **大量对象创建**：程序中不断创建大量对象，超出JVM堆的限制。
+- **持久引用**：大型数据结构（如缓存、集合等）长时间持有对象引用，导致内存累积。
+- **递归调用**：深度递归导致栈溢出。
+
+### jvm 内存结构有哪几种内存溢出的情况？
+
+- **堆内存溢出**：当出现Java.lang.OutOfMemoryError:Java heap space异常时，就是堆内存溢出了。原因是代码中可能存在大对象分配，或者发生了内存泄露，导致在多次GC之后，还是无法找到一块足够大的内存容纳当前对象。
+- **栈溢出**：如果我们写一段程序不断的进行递归调用，而且没有退出条件，就会导致不断地进行压栈。类似这种情况，JVM 实际会抛出 StackOverFlowError；当然，如果 JVM 试图去扩展栈空间的的时候失败，则会抛出 OutOfMemoryError。
+- **元空间溢出**：元空间的溢出，系统会抛出Java.lang.OutOfMemoryError: Metaspace。出现这个异常的问题的原因是系统的代码非常多或引用的第三方包非常多或者通过动态代码生成类加载等方法，导致元空间的内存占用很大。
+- **直接内存内存溢出**：在使用ByteBuffer中的allocateDirect()的时候会用到，很多JavaNIO(像netty)的框架中被封装为其他的方法，出现该问题时会抛出Java.lang.OutOfMemoryError: Direct buffer memory异常。
+
+### 有具体的内存泄漏和内存溢出的例子么请举例及解决方案?
+
+> 1、静态属性导致内存泄露
+
+会导致内存泄露的一种情况就是大量使用static静态变量。在Java中，静态属性的生命周期通常伴随着应用整个生命周期（除非ClassLoader符合垃圾回收的条件）。下面来看一个具体的会导致内存泄露的实例：
+
+```java
+public class StaticTest {
+    public static List<Double> list = new ArrayList<>();
+    public void populateList() {
+        for (int i = 0; i < 10000000; i++) {
+            list.add(Math.random());
+        }
+        Log.info("Debug Point 2");
+    }
+    public static void main(String[] args) {
+        Log.info("Debug Point 1");
+        new StaticTest().populateList();
+        Log.info("Debug Point 3");
+    }
+}
+```
+
+如果监控内存堆内存的变化，会发现在打印Point1和Point2之间，堆内存会有一个明显的增长趋势图。但当执行完populateList方法之后，对堆内存并没有被垃圾回收器进行回收。
+
+![image-20240820112907539](https://cdn.xiaolincoding.com//picgo/image-20240820112907539.png)
+
+但针对上述程序，如果将定义list的变量前的static关键字去掉，再次执行程序，会发现内存发生了具体的变化。VisualVM监控信息如下图：
+
+![image-20240820112851893](https://cdn.xiaolincoding.com//picgo/image-20240820112851893.png)
+
+对比两个图可以看出，程序执行的前半部分内存使用情况都一样，但当执行完populateList方法之后，后者不再有引用指向对应的数据，垃圾回收器便进行了回收操作。因此，我们要十分留意static的变量，如果集合或大量的对象定义为static的，它们会停留在整个应用程序的生命周期当中。而它们所占用的内存空间，本可以用于其他地方。
+
+那么如何优化呢？第一，进来减少静态变量；第二，如果使用单例，尽量采用懒加载。
+
+> 2、 未关闭的资源
+
+无论什么时候当我们创建一个连接或打开一个流，JVM都会分配内存给这些资源。比如，数据库链接、输入流和session对象。
+
+忘记关闭这些资源，会阻塞内存，从而导致GC无法进行清理。特别是当程序发生异常时，没有在finally中进行资源关闭的情况。这些未正常关闭的连接，如果不进行处理，轻则影响程序性能，重则导致OutOfMemoryError异常发生。
+
+如果进行处理呢？第一，始终记得在finally中进行资源的关闭；第二，关闭连接的自身代码不能发生异常；第三，Java7以上版本可使用try-with-resources代码方式进行资源关闭。
+
+> 3、 使用ThreadLocal
+
+ThreadLocal提供了线程本地变量，它可以保证访问到的变量属于当前线程，每个线程都保存有一个变量副本，每个线程的变量都不同。ThreadLocal相当于提供了一种线程隔离，将变量与线程相绑定，从而实现线程安全的特性。
+
+![image-20240820112835783](https://cdn.xiaolincoding.com//picgo/image-20240820112835783.png)
+
+ThreadLocal的实现中，每个Thread维护一个ThreadLocalMap映射表，key是ThreadLocal实例本身，value是真正需要存储的Object。
+
+ThreadLocalMap使用ThreadLocal的弱引用作为key，如果一个ThreadLocal没有外部强引用来引用它，那么系统GC时，这个ThreadLocal势必会被回收，这样一来，ThreadLocalMap中就会出现key为null的Entry，就没有办法访问这些key为null的Entry的value。
+
+如果当前线程迟迟不结束的话，这些key为null的Entry的value就会一直存在一条强引用链：Thread Ref -> Thread -> ThreaLocalMap -> Entry -> value永远无法回收，造成内存泄漏。
+
+如何解决此问题？
+
+- 第一，使用ThreadLocal提供的remove方法，可对当前线程中的value值进行移除；
+- 第二，不要使用ThreadLocal.set(null) 的方式清除value，它实际上并没有清除值，而是查找与当前线程关联的Map并将键值对分别设置为当前线程和null。
+- 第三，最好将ThreadLocal视为需要在finally块中关闭的资源，以确保即使在发生异常的情况下也始终关闭该资源。
+
+```java
+try {
+    threadLocal.set(System.nanoTime());
+    //... further processing
+} finally {
+    threadLocal.remove();
+}
+```
+
+## 类初始化和类加载
+
+### 创建对象的过程？
+
+![img](https://cdn.xiaolincoding.com//picgo/1713516384566-e820b967-73ce-49a4-a6e6-36af9a38ebc4.webp)在Java中创建对象的过程包括以下几个步骤：
+
+1. **类加载检查**：虚拟机遇到一条 new 指令时，首先将去检查这个指令的参数是否能在**常量池**中定位到一个类的**符号引用**，==并且检查这个符号引用代表的类是否已被**加载过、解析和初始化**过==。如果没有，那必须先执行相应的**类加载过程**。
+2. **分配内存**：在类加载检查通过后，接下来虚拟机将为新生对象分配内存。==对象所需的**内存大小**在**类加载**完成后便可确定==，为对象分配空间的任务等同于把一块确定大小的内存从 Java 堆中划分出来。
+3. **初始化零值**：内存分配完成后，虚拟机需要将分配到的内存空间都初始化为零值（不包括对象头），这一步操作==保证了对象的实例字段在 Java 代码中可以不赋初始值就直接使用==，程序能访问到这些字段的数据类型所对应的零值。
+4. **进行必要设置，比如对象头**：初始化零值完成之后，虚拟机要对对象进行**必要的设置**，例如这个对象是==哪个类的实例、如何才能找到类的元数据信息、对象的哈希码、对象的 GC 分代年龄等信息==。这些信息存放在**对象头**中。另外，根据虚拟机当前运行状态的不同，如是否启用偏向锁等，对象头会有不同的设置方式。
+5. **执行 init 方法**：在上面工作都完成之后，从虚拟机的视角来看，一个新的对象已经产生了，但从 Java 程序的视角来看，对象创建才刚开始——==构造函数==，即class文件中的方法还没有执行，所有的字段都还为零，**对象需要的其他资源和状态信息**还没有按照预定的意图构造好。所以一般来说，执行 new 指令之后会接着执行方法，把对象按照程序员的意愿进行初始化，这样一个真正可用的对象才算完全被构造出来。
+
+------
+
+### 讲一下类加载过程？
+
+类从被加载到虚拟机内存开始，到卸载出内存为止，它的整个生命周期包括以下 7 个阶段：
+
+![类加载过程](https://cdn.xiaolincoding.com//picgo/1719491354969-a7c861d7-531e-45d3-a4aa-4696710ec297.webp)
+
+- **加载**：通过类的全限定名（包名 + 类名），获取到该类的.class文件的二进制字节流，将二进制字节流所代表的静态存储结构，转化为方法区运行时的数据结构==，在内存中生成一个代表该类的Java.lang.Class对象，作为方法区这个类的各种数据的访问入口==
+
+- **连接**：验证、准备、解析 3 个阶段统称为连接。
+
+  - **验证**：确保class文件中的字节流包含的信息，符合当前虚拟机的要求，保证这个被加载的class类的正确性，不会危害到虚拟机的安全。验证阶段大致会完成以下四个阶段的检验动作：==文件格式校验、元数据验证、字节码验证、符号引用验证==
+  - **准备**：为类中的静态字段==分配内存，==并设置默认的初始值，比如int类型初始值是0。被final修饰的static字段不会设置，因为final在编译的时候就分配了
+  - **解析**：解析阶段是==虚拟机将常量池的「符号引用」直接替换为「直接引用」的过程==。符号引用是以一组符号来描述所引用的目标，==符号可以是任何形式的字面量==，只要使用的时候可以无歧义地定位到目标即可。直接引用可以是直接指向目标的指针、相对偏移量或是一个能间接定位到目标的句柄，==直接引用是和虚拟机实现的内存布局相关的==。如果有了直接引用， 那引用的目标必定已经存在在内存中了。
+
+- **初始化**：初始化是整个类加载过程的最后一个阶段，初始化阶段简单来说就是执行类的构造器方法（() ），要注意的是这里的构造器方法()并不是开发者写的，而是编译器自动生成的。
+
+  > 初始化时，JVM 会调用 **类构造器方法 `<clinit>()`**：
+  >
+  > - `<clinit>()` 是编译器 **自动生成** 的一个方法，不是开发者自己写的。
+  > - 它包含了：
+  >   - 所有 **静态变量的显式赋值**；
+  >   - 所有 **静态代码块**；
+  >   - 它们在源文件中出现的顺序。
+
+- **使用**：使用类或者创建对象
+
+- **卸载**：一个类要被JVM卸载，条件非常苛刻，**需要同时满足以下三点**：
+
+  - **该类所有的实例都已经被回收**：这是最显而易见的前提。如果堆中还存在这个类的任何一个实例对象，那么定义这个对象的Class对象肯定不能被卸载。
+  - **加载该类的ClassLoader已经被回收**：这是**最关键也是最难满足的条件**。类与其加载器是双向绑定的共生关系。一个类由哪个类加载器加载，这个信息是存储在Class对象里的。要卸载一个类，必须先卸载加载它的类加载器。
+  - **类对应的Java.lang.Class对象没有任何地方被引用**：不能在任何地方通过反射（如静态字段、全局变量）、静态变量、JNI等途径引用到这个Class对象。一旦这个Class对象还存在强引用，GC就不会回收它，那么这个类也就不会被卸载。
+
+------
+
+### 类加载器有哪些？
+
+![img](https://cdn.xiaolincoding.com//picgo/1719491243997-d62ceba6-2073-41a6-8320-dbe47ce9dbe4.png)
+
+- **启动类加载器（Bootstrap Class Loader）**：这是最顶层的类加载器，负责加载Java的核心库（如位于jre/lib/rt.jar中的类），它是用C++编写的，是JVM的一部分。启动类加载器无法被Java程序直接引用。
+- **扩展类加载器（Extension Class Loader）**：它是Java语言实现的，继承自ClassLoader类，负责加载Java扩展目录（jre/lib/ext或由系统变量Java.ext.dirs指定的目录）下的jar包和类库。扩展类加载器由启动类加载器加载，并且父加载器就是启动类加载器。
+- **系统类加载器（System Class Loader）/ 应用程序类加载器（Application Class Loader）**：这也是Java语言实现的，负责加载用户类路径（ClassPath）上的指定类库，==是我们平时编写Java程序时默认使用的类加载器。==系统类加载器的父加载器是扩展类加载器。它可以通过ClassLoader.getSystemClassLoader()方法获取到。
+- **自定义类加载器（Custom Class Loader）**：开发者可以根据需求定制类的加载方式，比如从网络加载class文件、数据库、甚至是加密的文件中加载类等。自定义类加载器可以用来扩展Java应用程序的灵活性和安全性，是Java动态性的一个重要体现。
+
+这些类加载器之间的关系形成了双亲委派模型，==其核心思想是当一个类加载器收到类加载的请求时，首先不会自己去尝试加载这个类，而是把这个请求委派给父类加载器去完成==，每一层次的类加载器都是如此，因此所有的加载请求最终都应该传送到顶层的启动类加载器中。
+
+只有当父加载器反馈自己无法完成这个加载请求（它的搜索范围中没有找到所需的类）时，子加载器才会尝试自己去加载。
+
+------
+
+### 双亲委派模型的作用
+
+- **保证类的唯一性**：通过委托机制，确保了所有加载请求都会传递到启动类加载器，==避免了不同类加载器重复加载相同类的情况==，保证了Java核心类库的统一性，也防止了用户自定义类覆盖核心类库的可能。
+- **保证安全性**：由于Java核心库被启动类加载器加载，而启动类加载器只加载信任的类路径中的类，这样可以==防止不可信的类假冒核心类==，增强了系统的安全性。例如，恶意代码无法自定义一个Java.lang.System类并加载到JVM中，因为这个请求会被委托给启动类加载器，而启动类加载器只会加载标准的Java库中的类。
+- **支持隔离和层次划分**：双亲委派模型==支持不同层次的类加载器服务于不同的类加载需求==，如应用程序类加载器加载用户代码，扩展类加载器加载扩展框架，启动类加载器加载核心库。这种==层次化==的划分有助于实现沙箱安全机制，保证了各个层级类加载器的职责清晰，也便于维护和扩展。
+- **简化了加载流程**：通过委派，大部分类能够被正确的类加载器加载，减少了每个加载器需要处理的类的数量，简化了类的加载过程，提高了加载效率。
+
+---
+
+## 垃圾回收
+
+### 什么是Java里的垃圾回收？如何触发垃圾回收？
+
+垃圾回收（Garbage Collection, GC）是自动管理内存的一种机制，它负责自动释放不再被程序引用的对象所占用的内存，这种机制减少了内存泄漏和内存管理错误的可能性。垃圾回收可以通过多种方式触发，具体如下：
+
+- **内存不足时**：当JVM检测到堆内存不足，无法为新的对象分配内存时，会自动触发垃圾回收。
+- **手动请求**：虽然垃圾回收是自动的，开发者可以通过调用 `System.gc()` 或 `Runtime.getRuntime().gc()` 建议 JVM 进行垃圾回收。==不过这只是一个建议，并不能保证立即执行。==
+- **JVM参数**：启动 Java 应用时可以通过 JVM 参数来调整垃圾回收的行为，比如：`-Xmx`（最大堆大小）、`-Xms`（初始堆大小）等。
+- **对象数量或内存使用达到阈值**：垃圾收集器内部实现了一些策略，以监控对象的创建和内存使用，==达到某个阈值时触发垃圾回收。==
+
+好问题 👍，你问的是 **垃圾收集器（GC）在什么策略下触发回收**。
+
+JVM 里并不是“随便什么时候回收”，而是有一整套触发条件和策略。下面帮你梳理👇
+
+------
+
+#### 🔹 1. 常见的触发策略（GC 触发条件）
+
+##### （1）Young GC（Minor GC）
+
+- 新生代（Eden + Survivor）空间不足时触发。
+- 典型场景：对象分配太快，Eden 装不下了。
+- JVM 还有 **分配担保机制**：如果 Survivor 放不下，会直接晋升老年代。
+
+👉 策略：**对象分配失败时触发 Young GC**。
+
+------
+
+##### （2）Full GC（Major GC）
+
+- 老年代空间不足时触发。
+- 永久代/元空间不足时触发（比如类加载过多）。
+- System.gc() 被显式调用（可能触发 Full GC，取决于 JVM 参数）。
+
+👉 策略：**老年代不足/元空间不足/显式请求时触发 Full GC**。
+
+------
+
+##### （3）大对象直接进入老年代
+
+- JVM 参数：`-XX:PretenureSizeThreshold`（适用于 Serial/ParNew 收集器）。
+- 当对象特别大（比如几 MB 的数组），避免在新生代复制多次，直接放进老年代。
+
+👉 策略：**避免大对象在新生代频繁复制**。
+
+------
+
+##### （4）动态年龄判定
+
+- 新生代 Survivor 区有一条规则：对象年龄（经过多少次 GC 还存活）。
+- 如果某个年龄段的对象大小总和 > Survivor 区的一半，那么**年龄大于等于该值的对象直接晋升老年代**。
+
+👉 策略：**动态判断对象晋升时机，避免 Survivor 被撑爆**。
+
+------
+
+##### （5）分配担保机制
+
+- 当新生代要做 GC 时，JVM 会检查老年代剩余空间是否足够存放所有可能晋升的对象。
+- 如果不够，就会触发一次 Full GC。
+
+👉 策略：**Young GC 前担保检查，空间不足直接 Full GC**。
+
+------
+
+#### 🔹 2. 不同垃圾收集器的策略
+
+不同收集器还有差异：
+
+- **Serial/Parallel 收集器**
+   触发条件比较“硬”：内存不足 → GC。
+- **CMS（并发标记清除）**
+   会在老年代使用率达到一定比例时触发（默认 68%，可调 `-XX:CMSInitiatingOccupancyFraction`）。
+   👉 策略：**提前回收，避免 Stop The World 太久**。
+- **G1 收集器**
+   根据 **Region 占用率** 和 **用户设定的延迟目标（Pause Time Goal）** 动态选择哪些 Region 回收。
+   👉 策略：**基于 Region 和停顿时间预测触发**。
+- **ZGC / Shenandoah**
+   更智能，触发回收时机主要基于内存压力和并发标记机制，不是简单的阈值。
+
+------
+
+#### 🔹 3. 总结触发策略表
+
+| GC 类型          | 触发条件                          |
+| ---------------- | --------------------------------- |
+| Young GC         | 新生代空间不足                    |
+| Full GC          | 老年代/元空间不足，System.gc()    |
+| 大对象晋升       | 超过 `PretenureSizeThreshold`     |
+| 动态年龄判定     | Survivor 区同龄对象占比过大       |
+| 分配担保         | Young GC 前担保不够，直接 Full GC |
+| CMS              | 老年代使用率超过阈值（默认 68%）  |
+| G1               | Region 占用率 + 停顿时间预测      |
+| ZGC / Shenandoah | 内存压力 + 并发标记机制           |
+
+------
+
+### 判断垃圾的方法有哪些？
+
+在Java中，判断对象是否为垃圾（即不再被使用，可以被垃圾回收器回收）主要依据两种主流的垃圾回收算法来实现：**引用计数法和可达性分析算法**。
+
+> 引用计数法（Reference Counting）
+
+- **原理**：为每个对象分配一个引用计数器，每当有一个地方引用它时，计数器加1；当引用失效时，计数器减1。当计数器为0时，表示对象不再被任何变量引用，可以被回收。
+- **缺点**：不能解决循环引用的问题，即两个对象相互引用，但不再被其他任何对象引用，这时引用计数器不会为0，导致对象无法被回收。
+
+> 可达性分析算法（Reachability Analysis）
+
+![img](https://cdn.xiaolincoding.com//picgo/1719111821599-650b1691-2737-453b-ba4b-26b065a96e88.png)
+
+Java虚拟机主要采用此算法来判断对象是否为垃圾。
+
+- **原理**：从一组称为GC Roots（垃圾收集根）的对象出发，向下追溯它们引用的对象，以及这些对象引用的其他对象，以此类推。==如果一个对象到GC Roots没有任何引用链相连（即从GC Roots到这个对象不可达），那么这个对象就被认为是不可达的==，可以被回收。GC Roots对象包括：虚拟机栈（栈帧中的本地变量表）中引用的对象、方法区中类静态属性引用的对象、本地方法栈中JNI（Java Native Interface）引用的对象、活跃线程的引用等。
+
+  > 虚拟机栈（栈帧中的本地变量表）引用的对象
+  >
+  > 方法区中的类静态属性引用的对象
+  >
+  > 本地方法栈中 JNI 引用的对象
+  >
+  > 活跃线程引用的对象
+
+### 垃圾回收算法有哪些？
+
+- **标记-清除算法**：标记-清除算法分为“标记”和“清除”两个阶段，首先通过可达性分析，==标记出所有需要回收的对象，然后统一回收所有被标记的对象。==标记-清除算法有两个缺陷，一个是==效率问题==，标记和清除的过程效率都不高(==需要扫描整个堆两次（标记 + 清除）==)，另外一个就是，清除结束后会造成大量的==碎片空间==。有可能会造成在申请大块内存的时候因为==没有足够的连续空间==导致再次 GC。
+- **复制算法**：为了解决碎片空间的问题，出现了“复制算法”。复制算法的原理是，将内存分成两块，每次申请内存时都使用其中的一块，当内存不够时，==将这一块内存中所有存活的复制到另一块上。然后将然后再把已使用的内存整个清理掉==。复制算法解决了空间碎片的问题。但是也带来了新的问题。因为每次在申请内存时，==都只能使用一半的内存空间。内存利用率严重不足。==
+- **标记-整理算法**：==复制算法在 GC 之后存活对象较少的情况下效率比较高==，但如果存活对象比较多时，会执行较多的复制操作，效率就会下降。而老年代的对象在 GC 之后的存活率就比较高，所以就有人提出了“标记-整理算法”。标记-整理算法的“标记”过程与“标记-清除算法”的标记过程一致，==但标记之后不会直接清理。而是将所有存活对象都移动到内存的一端。移动结束后直接清理掉剩余部分。==
+- **分代回收算法**：分代收集是将内存划分成了新生代和老年代。分配的依据是对象的生存周期，或者说经历过的 GC 次数。对象创建时，一般在新生代申请内存，当经历一次 GC 之后如果对还存活，那么对象的年龄 +1。当年龄超过一定值(默认是 15，可以通过参数 -XX:MaxTenuringThreshold 来设定)后，如果对象还存活，那么该对象会进入老年代。
+
+| 代                      | 内容               | 分配策略                  | GC 频率 | 算法                                               |
+| ----------------------- | ------------------ | ------------------------- | ------- | -------------------------------------------------- |
+| 年轻代（Young）         | 新生对象           | Eden + 2 个 Survivor 空间 | 高      | 复制算法（Copying）                                |
+| 老年代（Old / Tenured） | 长期存活对象       | —                         | 低      | 标记-清除（Mark-Sweep）、标记-整理（Mark-Compact） |
+| 元空间（Metaspace）     | 类信息、静态变量等 | —                         | 低      | 标记-清除                                          |
+
+------
+
+### 垃圾回收器有哪些？
+
+![img](https://cdn.xiaolincoding.com//picgo/1712649527581-d6aee0bf-35ab-4406-8a26-270b35ae8771.png)
+
+- Serial收集器（复制算法): 新生代单线程收集器，标记和清理都是单线程，优点是简单高效；
+- ParNew收集器 (复制算法): 新生代收并行集器，实际上是Serial收集器的多线程版本，在多核CPU环境下有着比Serial更好的表现；
+- Parallel Scavenge收集器 (复制算法): 新生代并行收集器，追求高吞吐量，高效利用 CPU。吞吐量 = 用户线程时间/(用户线程时间+GC线程时间)，高吞吐量可以高效率的利用CPU时间，尽快完成程序的运算任务，适合后台应用等对交互相应要求不高的场景；
+- Serial Old收集器 (标记-整理算法): 老年代单线程收集器，Serial收集器的老年代版本；
+- Parallel Old收集器 (标记-整理算法)： 老年代并行收集器，吞吐量优先，Parallel Scavenge收集器的老年代版本；
+- CMS(Concurrent Mark Sweep)收集器（标记-清除算法）： 老年代并行收集器，以获取最短回收停顿时间为目标的收集器，具有高并发、低停顿的特点，追求最短GC回收停顿时间。
+- G1(Garbage First)收集器 (标记-整理算法)： Java堆并行收集器，G1收集器是JDK1.7提供的一个新收集器，G1收集器基于“标记-整理”算法实现，也就是说不会产生内存碎片。此外，G1收集器不同于之前的收集器的一个重要特点是：G1回收的范围是整个Java堆(包括新生代，老年代)，而前六种收集器回收的范围仅限于新生代或老年代
+
+### 垃圾回收算法哪些阶段会stop the world?
+
+> Stop-The-World 就是 JVM 在进行垃圾回收时，暂停所有用户线程，只运行 GC 线程的状态。它是 GC 停顿的根本原因。
+
+标记-复制算法应用在CMS新生代（ParNew是CMS默认的新生代垃圾回收器）和G1垃圾回收器中。标记-复制算法可以分为三个阶段：
+
+- 标记阶段，即从GC Roots集合开始，标记活跃对象；
+- 转移阶段，即把活跃对象复制到新的内存地址上；
+- 重定位阶段，因为转移导致对象的地址发生了变化，在重定位阶段，所有指向对象旧地址的指针都要调整到对象新的地址上。
+
+下面以G1为例，通过G1中标记-复制算法过程（G1的Young GC和Mixed GC均采用该算法），分析G1停顿耗时的主要瓶颈。G1垃圾回收周期如下图所示：
+
+![img](https://cdn.xiaolincoding.com//picgo/1718783586342-9da40db7-1dac-42ec-8148-81c10d8bfc04.png)
+
+G1的混合回收过程可以分为标记阶段、清理阶段和复制阶段。
+
+**标记阶段停顿分析**
+
+- 初始标记阶段：初始标记阶段是指从GC Roots出发标记全部直接子节点的过程，该阶段是STW的。由于GC Roots数量不多，通常该阶段耗时非常短。
+- 并发标记阶段：并发标记阶段是指从GC Roots开始对堆中对象进行可达性分析，找出存活对象。该阶段是并发的，即应用线程和GC线程可以同时活动。并发标记耗时相对长很多，但因为不是STW，所以我们不太关心该阶段耗时的长短。
+- 再标记阶段：重新标记那些在并发标记阶段发生变化的对象。该阶段是STW的。
+
+**清理阶段停顿分析**
+
+- 清理阶段清点出有存活对象的分区和没有存活对象的分区，该阶段不会清理垃圾对象，也不会执行存活对象的复制。该阶段是STW的。
+
+**复制阶段停顿分析**
+
+- 复制算法中的转移阶段需要分配新内存和复制对象的成员变量。转移阶段是STW的，其中内存分配通常耗时非常短，但对象成员变量的复制耗时有可能较长，这是因为复制耗时与存活对象数量与对象复杂度成正比。对象越复杂，复制耗时越长。
+
+四个STW过程中，初始标记因为只标记GC Roots，耗时较短。再标记因为对象数少，耗时也较短。清理阶段因为内存分区数量少，耗时也较短。==转移阶段要处理所有存活的对象，耗时会较长。==
+
+==因此，G1停顿时间的瓶颈主要是标记-复制中的转移阶段STW。==
+
+> ## G1 的标记阶段拆分
+>
+> 1. **初始标记 (Initial Mark) → STW**
+>    - 只标记 GC Roots 直接可达的对象。
+>    - 非常快，因为只扫一层。
+>    - 和一次 Young GC 结合在一起完成。
+> 2. **并发标记 (Concurrent Marking) → 并发**
+>    - GC 线程和应用线程同时运行，扫描整个堆，标记活对象。
+>    - 这是最耗时的阶段，但它 **不会阻塞业务线程**。
+> 3. **最终标记 (Remark) → STW**
+>    - 修正并发标记期间遗漏的引用变化。
+>    - 时间很短，通常 <100ms。
+>    - 使用 SATB（Snapshot-At-The-Beginning） 技术保证准确性。
+> 4. **筛选回收集 (Cleanup / Live Data Counting) → 部分 STW**
+>    - 统计各 Region 的存活率，选出回收收益最高的一批 Region。
+>    - 完全空的 Region 可以直接回收（很快）。
+>    - 需要一点 STW 时间，但比全堆整理要短得多。 
+
+------
+
+### minorGC、majorGC、fullGC的区别，什么场景触发full GC
+
+在Java中，垃圾回收机制是自动管理内存的重要组成部分。根据其作用范围和触发条件的不同，可以将GC分为三种类型：==Minor GC（也称为Young GC）、Major GC（有时也称为Old GC）、以及Full GC==。以下是这三种GC的区别和触发场景：
+
+> Minor GC (Young GC)
+
+- **作用范围**：==只针对年轻代进行回收，包括Eden区和两个Survivor区（S0和S1）==。
+- **触发条件**：当Eden区空间不足时，JVM会触发一次Minor GC，将Eden区和一个Survivor区中的存活对象移动到另一个Survivor区或老年代（Old Generation）。
+- **特点**：通常发生得非常频繁，因为年轻代中对象的生命周期较短，回收效率高，暂停时间相对较短。
+
+> Major GC
+
+- **作用范围**：==主要针对老年代进行回收==，但不一定只回收老年代。
+- **触发条件**：当老年代空间不足时，或者系统检测到年轻代对象晋升到老年代的速度过快，可能会触发Major GC。
+- **特点**：相比Minor GC，Major GC发生的频率较低，但每次回收可能需要更长的时间，因为老年代中的对象存活率较高。
+
+> Full GC
+
+- **作用范围**：==对整个堆内存（包括年轻代、老年代以及永久代/元空间）进行回收。==
+- **触发条件**：
+  - 直接调用`System.gc()`或`Runtime.getRuntime().gc()`方法时，虽然不能保证立即执行，但JVM会尝试执行Full GC。
+  - Minor GC（新生代垃圾回收）时，如果存活的对象无法全部放入老年代，或者老年代空间不足以容纳存活的对象，则会触发Full GC，对整个堆内存进行回收。
+  - 当永久代（Java 8之前的版本）或元空间（Java 8及以后的版本）空间不足时。
+- **特点**：Full GC是最昂贵的操作，因为它需要停止所有的工作线程（Stop The World），遍历整个堆内存来查找和回收不再使用的对象，因此应尽量减少Full GC的触发。
+
+------
+
+### 垃圾回收器 CMS 和 G1的区别？
+
+**区别一：使用的范围不一样：**
+
+- ==CMS收集器是老年代的收集器==，可以配合新生代的Serial和ParNew收集器一起使用
+- G1收集器收集范围是==老年代和新生代==。不需要结合其他收集器使用
+
+**区别二：STW的时间：**
+
+- CMS收集器==以最小的停顿时间==为目标的收集器。
+- G1收集器==可预测==[垃圾回收 (opens new window)](https://so.csdn.net/so/search?q=垃圾回收&spm=1001.2101.3001.7020)的停顿时间（建立可预测的停顿时间模型）
+
+**区别三： 垃圾碎片**
+
+- CMS收集器是使用“标记-清除”算法进行的垃圾回收，==容易产生内存碎片==
+- G1收集器使用的是“标记-整理”算法，进行了空间整合，没有内存空间碎片。
+
+**区别四： 垃圾回收的过程不一样**
+
+![img](https://cdn.xiaolincoding.com//picgo/1716015294690-efd71a12-f4b1-4356-9de2-5164393482a5.png)
+
+注意这两个收集器第四阶段得不同
+
+**区别五: CMS会产生浮动垃圾**
+
+- CMS产生浮动垃圾过多时会退化为serial old，效率低，因为在上图的第四阶段，==CMS清除垃圾时是并发清除的==，这个时候，垃圾回收线程和用户线程同时工作会产生浮动垃圾，也就意味着CMS垃圾回收器必须预留一部分内存空间用于存放浮动垃圾
+- 而G1没有浮动垃圾，G1的筛选回收是多个垃圾回收线程并行gc的，没有浮动垃圾的回收，在执行并发清理步骤时，用户线程也会同时产生一部分可回收对象，但是这部分可回收对象只能在下次执行清理是才会被回收。如果在清理过程中预留给用户线程的内存不足就会出现‘Concurrent Mode Failure’,一旦出现此错误时便会切换到SerialOld收集方式。
+
+------
+
+### 什么情况下使用CMS，什么情况使用G1?
+
+CMS适用场景：
+
+- **低延迟需求**：适用于对停顿时间要求敏感的应用程序。
+- **老生代收集**：主要针对老年代的垃圾回收。
+- **碎片化管理**：容易出现内存碎片，可能需要定期进行Full GC来压缩内存空间。
+
+G1适用场景：
+
+- **大堆内存**：适用于需要管理大内存堆的场景，能够有效处理数GB以上的堆内存。
+- **对内存碎片敏感**：G1通过紧凑整理来减少内存碎片，降低了碎片化对性能的影响。
+- **比较平衡的性能**：G1在提供较低停顿时间的同时，也保持了相对较高的吞吐量。
+
+------
+
+### G1回收器的特色是什么？
+
+**G1 的特点：**
+
+- G1最大的特点是==引入分区==的思路，弱化了分代的概念。
+- 合理利用垃圾收集各个周期的资源，解决了其他收集器、甚至 CMS 的众多缺陷
+
+**G1 相比较 CMS 的改进：**
+
+- **算法**： G1 基于标记--整理算法, 不会产生空间碎片，在分配大对象时，不会因无法得到连续的空间，而提前触发一次 FULL GC 。
+- **停顿时间可控**： G1可以通过设置==预期停顿时间==（Pause Time）来控制垃圾收集时间避免应用雪崩现象。
+- **并行与并发**：G1 能==更充分的利用 CPU 多核环境下的硬件优势==，来缩短 stop the world 的停顿时间。
+
+------
+
+引入 G1 GC 后，堆的内存划分方式确实 **和传统分代 GC 有明显区别**，这是 G1 最大的设计创新之一。我们可以具体分析一下：
+
+#### 1️⃣ 传统分代堆划分
+
+传统 GC（如 Serial、Parallel、CMS）：
+
+```
+整个堆
+├── 新生代（Young Generation）
+│   ├── Eden
+│   └── Survivor
+└── 老年代（Old Generation）
+```
+
+特点：
+
+- 新生代和老年代 **固定大小**，比例在 JVM 启动时确定，可调节但不动态
+- Minor GC → 只收集新生代
+- Full GC → 收集老年代
+- 固定代界限 → 调优复杂，容易出现停顿问题
+
+------
+
+#### 2️⃣ G1 GC 堆划分
+
+G1 不再固定新生代/老年代，而是将堆划分为 **多个大小相等的 Region**：
+
+```
+整个堆
+┌──────────┬──────────┬──────────┐
+│ Region 1 │ Region 2 │ Region 3 │ ...  
+└──────────┴──────────┴──────────┘
+```
+
+- 每个 Region 约 1MB~32MB（可配置）
+- Region 可以 **动态作为 Eden、Survivor 或老年代**
+- 新生代/老年代不再是连续固定区域，而是 **逻辑概念**
+  - 新生代 = 若干 Eden + Survivor Region
+  - 老年代 = 剩余 Region，存活率高的对象所在
+
+------
+
+#### 3️⃣ 内存管理和 GC 触发
+
+- **动态分配**：
+  - 新对象分配到空闲 Region → 临时作为 Eden Region
+  - 新生代对象晋升 → 占用老年代 Region
+- **GC 触发**：
+  - Young GC → 回收新生代 Region
+  - Mixed GC → 回收新生代 + 存活率低的老年代 Region
+  - Full GC → 兜底，整个堆 STW
+- **优势**：
+  1. 灵活调整新生代/老年代大小
+  2. 控制停顿时间 → 只回收部分 Region
+  3. 减少碎片 → 回收时存活对象复制到新 Region
+
+------
+
+#### 4️⃣ 总结
+
+| 特性          | 传统分代 GC             | G1 GC                                |
+| ------------- | ----------------------- | ------------------------------------ |
+| 新生代/老年代 | 固定连续内存区          | 若干 Region 动态划分                 |
+| 分代概念      | 明确固定                | 弱化，Region 可动态充当新生代/老年代 |
+| 内存回收粒度  | Minor GC/Full GC        | 每次收集部分 Region                  |
+| 调优难度      | 新生代/老年代比例手动调 | 自动动态调整，停顿可预测             |
+| 碎片          | 老年代可能碎片化        | Region 复制整理，碎片少              |
+
+✅ 核心：**G1 GC 改变了堆的连续划分方式，用 Region 替代固定代区，使堆更加灵活、可预测、碎片更少**。
+
+```
+Region 1: 80% 存活 → 老年代 Region, 不回收
+Region 2: 10% 存活 → 优先回收
+Region 3: 60% 存活 → Mixed GC 可选择回收或保留
+```
+
+------
+
+### GC只会对堆进行GC吗？
+
+JVM 的垃圾回收器不仅仅会对堆进行垃圾回收，它还会对方法区进行垃圾回收。
+
+1. **堆（Heap）：** 堆是用于存储对象实例的内存区域。大部分的垃圾回收工作都发生在堆上，因为大多数对象都会被分配在堆上，而垃圾回收的重点通常也是回收堆中不再被引用的对象，以释放内存空间。
+2. **方法区（Method Area）：** 方法区是用于存储类信息、常量、静态变量等数据的区域。虽然方法区中的垃圾回收与堆有所不同，但是同样存在对不再需要的常量、无用的类信息等进行清理的过程。
+
+------
+
+# Spring
+
+## 说一下你对 Spring 的理解
+
+![img](https://cdn.xiaolincoding.com//picgo/1712650311366-b499469c-5afd-4be9-bad3-d787de86bf98.png)
+
+Spring框架核心特性包括：
+
+- **IoC容器**：Spring通过控制反转实现了对象的创建和对象间的依赖关系管理。开发者只需要定义好Bean及其依赖关系，Spring容器负责创建和组装这些对象。
+- **AOP**：面向切面编程，允许开发者定义横切关注点，例如事务管理、安全控制等，独立于业务逻辑的代码。通过AOP，可以将这些关注点模块化，提高代码的可维护性和可重用性。
+- **事务管理**：Spring提供了一致的事务管理接口，支持声明式和编程式事务。开发者可以轻松地进行事务管理，而无需关心具体的事务API。
+- **MVC框架**：Spring MVC是一个基于Servlet API构建的Web框架，采用了模型-视图-控制器（MVC）架构。它支持灵活的URL到页面控制器的映射，以及多种视图技术。
+
