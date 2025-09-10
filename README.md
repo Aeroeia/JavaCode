@@ -4842,7 +4842,352 @@ JVM 的垃圾回收器不仅仅会对堆进行垃圾回收，它还会对方法�
 Spring框架核心特性包括：
 
 - **IoC容器**：Spring通过控制反转实现了对象的创建和对象间的依赖关系管理。开发者只需要定义好Bean及其依赖关系，Spring容器负责创建和组装这些对象。
+
+  > 控制反转的意思是：
+  >
+  > - **原本由程序员自己在代码中创建和管理对象的过程**（比如 `new UserService()`），
+  > - 交给 **Spring 容器** 来负责对象的创建、管理和依赖注入。
+
 - **AOP**：面向切面编程，允许开发者定义横切关注点，例如事务管理、安全控制等，独立于业务逻辑的代码。通过AOP，可以将这些关注点模块化，提高代码的可维护性和可重用性。
+
 - **事务管理**：Spring提供了一致的事务管理接口，支持声明式和编程式事务。开发者可以轻松地进行事务管理，而无需关心具体的事务API。
+
 - **MVC框架**：Spring MVC是一个基于Servlet API构建的Web框架，采用了模型-视图-控制器（MVC）架构。它支持灵活的URL到页面控制器的映射，以及多种视图技术。
+
+------
+
+### Spring的aop介绍一下
+
+Spring AOP是Spring框架中的一个重要模块，用于实现面向切面编程。
+
+我们知道，Java 就是一门面向对象编程的语言，在 OOP 中最小的单元就是“Class 对象”，但是在 AOP 中最小的单元是“切面”。一个“切面”可以包含很多种类型和对象，对它们进行模块化管理，例如事务管理。
+
+在面向切面编程的思想里面，把功能分为两种
+
+- **核心业务**：登陆、注册、增、删、改、查、都叫核心业务
+- **周边功能**：日志、事务管理这些次要的为周边业务
+
+在面向切面编程中，核心业务功能和周边功能是分别独立进行开发，两者不是耦合的，然后把切面功能和核心业务功能 "编织" 在一起，这就叫AOP。
+
+AOP能够将那些与业务无关，**却为业务模块所共同调用的逻辑或责任（例如事务处理、日志管理、权限控制等）封装起来**，便于**减少系统的重复代码**，**降低模块间的耦合度**，并**有利于未来的可拓展性和可维护性**。
+
+在 AOP 中有以下几个概念：
+
+- **AspectJ**：切面，只是一个概念，没有具体的接口或类与之对应，是 Join point，Advice 和 Pointcut 的一个统称。
+- **Join point**：连接点，指程序执行过程中的一个点，例如方法调用、异常处理等。==在 Spring AOP 中，仅支持方法级别的连接点。==
+- **Advice**：通知，即我们定义的一个切面中的横切逻辑，==有“around”，“before”和“after”三种类型==。在很多的 AOP 实现框架中，Advice 通常作为一个拦截器，也可以包含许多个拦截器作为一条链路围绕着 Join point 进行处理。
+- **Pointcut**：切点，用于匹配连接点，一个 AspectJ 中包含哪些 Join point 需要由 Pointcut 进行筛选。
+- **Introduction**：引介，让一个切面可以声明被通知的对象实现任何他们没有真正实现的额外的接口。例如可以让一个代理对象代理两个目标类。
+- **Weaving**：织入，在有了连接点、切点、通知以及切面，如何将它们应用到程序中呢？没错，就是织入，在切点的引导下，将通知逻辑插入到目标方法上，使得我们的通知逻辑在方法调用时得以执行。
+- **AOP proxy**：AOP 代理，指在 AOP 实现框架中实现切面协议的对象。在 Spring AOP 中有两种代理，分别是 JDK 动态代理和 CGLIB 动态代理。
+- **Target object**：目标对象，就是被代理的对象。
+
+Spring AOP 是==基于 JDK 动态代理和 Cglib 提升实现的==，两种代理方式都属于运行时的一个方式，所以它没有编译时的一个处理，那么因此 Spring 是通过 Java 代码实现的。
+
+==Spring AOP 基于**动态代理**（JDK 动态代理或 CGLIB），它只会代理由 **Spring IoC 容器创建和管理的 Bean**==
+
+------
+
+### IOC和AOP是通过什么机制来实现的?
+
+> Spring IOC 实现机制
+
+- **反射**：Spring IOC容器利用Java的反射机制动态地加载类、创建对象实例及调用对象方法，反射允许在运行时检查类、方法、属性等信息，从而实现灵活的对象实例化和管理。
+- **依赖注入**：IOC的核心概念是依赖注入，即容器负责管理应用程序组件之间的依赖关系。Spring通过构造函数注入、属性注入或方法注入，将组件之间的依赖关系描述在配置文件中或使用注解。
+- **设计模式 - 工厂模式**：Spring IOC容器通常采用工厂模式来管理对象的创建和生命周期。容器作为工厂负责实例化Bean并管理它们的生命周期，将Bean的实例化过程交给容器来管理。
+- **容器实现**：Spring IOC容器是实现IOC的核心，通常使用BeanFactory或ApplicationContext来管理Bean。BeanFactory是IOC容器的基本形式，提供基本的IOC功能；ApplicationContext是BeanFactory的扩展，并提供更多企业级功能。
+
+> Spring AOP 实现机制
+
+Spring AOP的实现依赖于**动态代理技术**。动态代理是在运行时动态生成代理对象，而不是在编译时。它允许开发者在运行时指定要代理的接口和行为，从而实现在不修改源码的情况下增强方法的功能。
+
+Spring AOP支持两种动态代理：
+
+- **基于JDK的动态代理**：使用java.lang.reflect.Proxy类和java.lang.reflect.InvocationHandler接口实现。这种方式需要代理的类实现一个或多个接口。
+- **基于CGLIB的动态代理**：当被代理的类没有实现接口时，Spring会使用CGLIB库生成一个被代理类的子类作为代理。CGLIB（Code Generation Library）是一个第三方代码生成库，通过继承方式实现代理。
+
+==jdk动态代理是将接口方法实现 在里面写自定义逻辑然后调用实现类方法 然后cglib是继承实现类 然后自定义逻辑中调用实现类方法==
+
+------
+
+### 怎么理解SpringIoc？
+
+**IOC**：Inversion Of Control，即控制反转，是一种设计思想。在传统的 Java SE 程序设计中，我们直接在对象内部通过 new 的方式来创建对象，是程序主动创建依赖对象；
+
+![img](https://cdn.xiaolincoding.com//picgo/1716790809843-e520e960-fb95-4511-aa30-73966361320a.webp)
+
+而在Spring程序设计中，IOC 是有专门的容器去控制对象。
+
+![img](https://cdn.xiaolincoding.com//picgo/1716790809860-74256f8b-3a96-485c-8aa1-11fa5dfb7640.webp)
+
+**所谓控制**就是对象的创建、初始化、销毁。
+
+- 创建对象：原来是 new 一个，现在是由 Spring 容器创建。
+- 初始化对象：原来是对象自己通过构造器或者 setter 方法给依赖的对象赋值，现在是由 Spring 容器自动注入。
+- 销毁对象：原来是直接给对象赋值 null 或做一些销毁操作，现在是 Spring 容器管理生命周期负责销毁对象。
+
+总结：IOC 解决了繁琐的对象生命周期的操作，解耦了我们的代码。**所谓反转**：其实是反转的控制权，前面提到是由 Spring 来控制对象的生命周期，那么对象的控制就完全脱离了我们的控制，控制权交给了 Spring 。这个反转是指：==我们由对象的控制者变成了 IOC 的被动控制者。==
+
+### 依赖倒置，依赖注入，控制反转分别是什么？
+
+- 控制反转：“控制”指的是对程序执行流程的控制，而“反转”指的是在没有使用框架之前，程序员自己控制整个程序的执行。在使用框架之后，整个程序的执行流程通过框架来控制。流程的控制权从程序员“反转”给了框架。
+
+- 依赖注入：依赖注入和控制反转恰恰相反，它是一种具体的编码技巧。我们不通过 new 的方式在类内部创建依赖类的对象，而是将依赖的类对象在外部创建好之后，通过构造函数、函数参数等方式传递（或注入）给类来使用。
+
+- 依赖倒置：这条原则跟控制反转有点类似，主要用来指导框架层面的设计。高层模块不依赖低层模块，它们共同依赖同一个抽象。抽象不要依赖具体实现细节，具体实现细节依赖抽象。
+
+  **传统依赖**
+
+  ```java
+  // 高层模块：业务逻辑层
+  public class OrderService {
+      // 直接依赖低层模块（具体实现）
+      private MySQLOrderRepository orderRepository = new MySQLOrderRepository();
+      
+      public void createOrder() {
+          orderRepository.saveOrder();
+      }
+  }
+  
+  // 低层模块：数据访问层
+  public class MySQLOrderRepository {
+      public void saveOrder() {
+          // 具体实现：MySQL 保存订单
+      }
+  }
+  ```
+
+  **依赖倒置**
+
+  ```java
+  // 1. 定义抽象（接口）
+  public interface OrderRepository {
+      void saveOrder();
+  }
+  
+  // 2. 高层模块依赖抽象
+  public class OrderService {
+      // 依赖抽象，而不是具体实现
+      private final OrderRepository orderRepository;
+      
+      public OrderService(OrderRepository orderRepository) {
+          this.orderRepository = orderRepository;
+      }
+      
+      public void createOrder() {
+          orderRepository.saveOrder();
+      }
+  }
+  
+  // 3. 低层模块实现抽象
+  public class MySQLOrderRepository implements OrderRepository {
+      @Override
+      public void saveOrder() {
+          // MySQL 实现
+      }
+  }
+  
+  public class MongoDBOrderRepository implements OrderRepository {
+      @Override
+      public void saveOrder() {
+          // MongoDB 实现
+      }
+  }
+  ```
+
+------
+
+### 依赖注入了解吗？怎么实现依赖注入的？
+
+在传统编程中，当一个类需要使用另一个类的对象时，通常会在该类内部通过`new`关键字来创建依赖对象，这使得类与类之间的耦合度较高。
+
+而依赖注入则是将对象的创建和依赖关系的管理交给 Spring 容器来完成，类只需要声明自己所依赖的对象，容器会在运行时将这些依赖对象注入到类中，从而降低了类与类之间的耦合度，提高了代码的可维护性和可测试性。
+
+具体到Spring中，常见的依赖注入的实现方式，比如构造器注入、Setter方法注入，还有字段注入。
+
+- **构造器注入：**通过构造函数传递依赖对象，保证对象初始化时依赖已就绪。
+
+```java
+@Service
+public class UserService {
+    private final UserRepository userRepository;
+    
+    // 构造器注入（Spring 4.3+ 自动识别单构造器，无需显式@Autowired）
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+}
+```
+
+- **Setter 方法注入：**通过 Setter 方法设置依赖，灵活性高，但依赖可能未完全初始化。
+
+```java
+public class PaymentService {
+    private PaymentGateway gateway;
+    
+    @Autowired
+    public void setGateway(PaymentGateway gateway) {
+        this.gateway = gateway;
+    }
+}
+```
+
+- **字段注入：**直接通过 `@Autowired` 注解字段，代码简洁但隐藏依赖关系，不推荐生产代码。
+
+```java
+@Service
+public class OrderService {
+    @Autowired
+    private OrderRepository orderRepository;
+}
+```
+
+------
+
+### 如果让你设计一个SpringIoc，你觉得会从哪些方面考虑这个设计？
+
+- Bean的生命周期管理：需要设计Bean的创建、初始化、销毁等生命周期管理机制，可以考虑使用==工厂模式和单例模式==来实现。
+
+- 依赖注入：需要实现依赖注入的功能，包括属性注入、构造函数注入、方法注入等，可以考虑使用==反射机制和XML配置文件==来实现。
+
+- Bean的作用域：需要支持多种Bean作用域，比如单例、原型、会话、请求等，可以考虑使用Map来存储不同作用域的Bean实例。
+
+  > #### ① Singleton（单例作用域） - **默认作用域**
+  >
+  > - ∙**含义**：在整个 Spring IoC 容器中，**只存在一个**该 Bean 的共享实例。
+  > - ∙**生命周期**：∙**创建**：容器启动时（如果设置为懒加载则是第一次请求时）创建。∙**销毁**：容器关闭时销毁。
+  > - ∙**类比**：公司里的**打印机**。全公司只有这一台，所有人（所有代码、所有请求）都共享使用这一台。节省资源，但要特别注意线程安全（不能两个人同时设置不同的打印设置）。
+  > - ∙**代码**：`@Scope("singleton")`或 `@Scope(ConfigurableBeanFactory.SCOPE_SINGLETON)`，或者不写（因为它是默认值）。
+  >
+  > #### ② Prototype（原型作用域）
+  >
+  > - ∙**含义**：**每次请求**（通过 `getBean()`或注入）都会创建一个**全新的** Bean 实例。
+  > - ∙**生命周期**：∙**创建**：每次被请求时创建。∙**销毁**：创建后，实例的管理权就交给了客户端（使用它的代码），容器不再跟踪其生命周期，也不会负责销毁它。类似于 Java 的 `new`关键字。
+  > - ∙**类比**：医院打针用的**一次性注射器**。每次需要打针（每次请求）时，护士都会给你拿一个全新的、独立的注射器。用完即弃。
+  > - ∙**代码**：`@Scope("prototype")`或 `@Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)`
+  >
+  > #### ③ Request（请求作用域） - **Web 应用特有**
+  >
+  > - ∙**含义**：在一次 HTTP 请求中，只创建一个 Bean 实例。不同的 HTTP 请求会有自己独立的 Bean 实例，它们之间不会相互干扰。
+  > - ∙**生命周期**：∙**创建**：每次 HTTP 请求开始时创建。∙**销毁**：本次 HTTP 请求结束时销毁。
+  > - ∙**适用场景**：非常适合用来存储与当前请求相关的数据，比如用户的表单数据、请求参数等。
+  > - ∙**代码**：`@Scope("request")`或 `@Scope(WebApplicationContext.SCOPE_REQUEST)`
+  > - ∙**前提**：必须在 Web 环境的 Spring 应用中（如 Spring MVC）才能使用。
+  >
+  > #### ④ Session（会话作用域） - **Web 应用特有**
+  >
+  > - ∙**含义**：在一个 HTTP Session 中，只创建一个 Bean 实例。同一个用户（同一个 Session）的多次请求会共享这个 Bean，不同用户的 Session 拥有各自独立的 Bean。
+  > - ∙**生命周期**：∙**创建**：第一次有请求来自某个 Session 时创建。∙**销毁**：该 HTTP Session 超时或失效时销毁。
+  > - ∙**适用场景**：存储用户级别的信息，最典型的就是**用户登录状态**。例如，可以将用户的登录信息（用户名、ID等）放入一个 Session 作用域的 Bean 中，在整个会话期间都可以方便地获取。
+  > - ∙**代码**：`@Scope("session")`或 `@Scope(WebApplicationContext.SCOPE_SESSION)`
+  > - ∙**前提**：同样，必须在 Web 环境的 Spring 应用中才能使用。
+
+- AOP功能的支持：需要支持AOP功能，可以考虑==使用动态代理机制和切面编程==来实现。
+
+- 异常处理：需要考虑异常处理机制，包括==Bean创建异常、依赖注入异常==等，可以考虑使用try-catch机制来处理异常。
+
+- 配置文件加载：需要支持==从不同的配置文件中加载Bean的相关信息==，可以考虑使用XML、注解或者Java配置类来实现。
+
+------
+
+### SpringAOP主要想解决什么问题
+
+它的目的是对于面向对象思维的一种补充，而不是像引入命令式、函数式编程思维让他顺应另一种开发场景。在我个人的理解下==AOP更像是一种对于不支持多继承的弥补==，除开对象的主要特征（我更喜欢叫“强共性”）被抽象为了一条继承链路，==对于一些“弱共性”，AOP可以统一对他们进行抽象和集中处理。==
+
+举一个简单的例子，打印日志。需要打印日志可能是许多对象的一个共性，这在企业级开发中十分常见，但是日志的打印并不反应这个对象的主要共性。而日志的打印又是一个具体的内容，它并不抽象，所以它的工作也不可以用接口来完成。而如果利用继承，打印日志的工作又横跨继承树下面的多个同级子节点，强行侵入到继承树内进行归纳会干扰这些强共性的区分。
+
+这时候，我们就需要AOP了。AOP首先在一个Aspect（切面）里定义了一些Advice（增强），其中包含具体实现的代码，同时整理了切入点，切入点的粒度是方法。最后，我们将这些Advice织入到对象的方法上，形成了最后执行方法时面对的完整方法。
+
+![img](https://cdn.xiaolincoding.com//picgo/1716791217083-132fe2ba-706a-4d8d-aef3-1617a2046585.png)
+
+------
+
+### 动态代理是什么？
+
+Java的动态代理是一种在运行时动态创建代理对象的机制，主要用于在不修改原始类的情况下对方法调用进行拦截和增强。
+
+Java动态代理主要分为两种类型：
+
+- **基于接口的代理**（JDK动态代理）： 这种类型的代理要求目标对象必须实现至少一个接口。Java动态代理会创建一个实现了相同接口的代理类，然后在运行时动态生成该类的实例。这种代理的实现核心是`java.lang.reflect.Proxy`类和`java.lang.reflect.InvocationHandler`接口。每一个动态代理类都必须实现`InvocationHandler`接口，并且每个代理类的实例都关联到一个`handler`。当通过代理对象调用一个方法时，这个方法的调用会被转发为由`InvocationHandler`接口的`invoke()`方法来进行调用。
+- **基于类的代理**（CGLIB动态代理）： CGLIB（Code Generation Library）是一个强大的高性能的代码生成库，它可以在运行时动态生成一个目标类的子类。CGLIB代理不需要目标类实现接口，而是通过继承的方式创建代理类。因此，如果目标对象没有实现任何接口，可以使用CGLIB来创建动态代理。
+
+------
+
+### 动态代理和静态代理的区别
+
+代理是一种常用的设计模式，目的是：为其他对象提供一个代理以控制对某个对象的访问，将两个类的关系解耦。代理类和委托类都要实现相同的接口，因为代理真正调用的是委托类的方法。
+
+区别：
+
+- 静态代理：由程序员创建或者是由特定工具创建，在代码编译时就确定了被代理的类是一个静态代理。静态代理通常只代理一个类；
+
+  ```java
+  // 静态代理类
+  public class UserServiceProxy implements UserService {
+      private UserService target; // 持有目标对象
+  
+      public UserServiceProxy(UserService target) {
+          this.target = target;
+      }
+  
+      @Override
+      public void addUser(String name) {
+          System.out.println("[代理] 前置增强: 开始添加用户");
+          target.addUser(name); // 调用目标方法
+          System.out.println("[代理] 后置增强: 添加完成");
+      }
+  
+      @Override
+      public void deleteUser(int id) {
+          System.out.println("[代理] 前置增强: 开始删除用户");
+          target.deleteUser(id);
+          System.out.println("[代理] 后置增强: 删除完成");
+      }
+  }
+  ```
+
+  ```java
+  public class Main {
+      public static void main(String[] args) {
+          // 创建目标对象
+          UserService target = new UserServiceImpl();
+          
+          // 创建代理对象（手动包装目标对象）
+          UserService proxy = new UserServiceProxy(target);
+          
+          // 通过代理调用方法
+          proxy.addUser("Alice");
+          proxy.deleteUser(123);
+      }
+  }
+  ```
+
+- 动态代理：在代码运行期间，运用反射机制动态创建生成。动态代理代理的是一个接口下的多个实现类。
+
+------
+
+### 能使用静态代理的方式实现AOP吗？
+
+当然**可以**用静态代理实现 AOP 的基本功能，比如你在代码里手动写个代理类，在目标方法前后加日志或者事务控制，技术上完全可行。但问题是，静态代理在实际生产中基本没人用，因为它有三大硬伤：
+
+- **第一是代码爆炸**。比如你有 100 个 Service 类需要加事务，就得写 100 个对应的静态代理类，里面全是重复的 `try-catch` 提交回滚代码，维护起来简直是灾难。
+- **第二是僵化**。一旦业务接口改了个方法名，所有相关的代理类都得跟着改，而动态代理通过反射调用目标方法，根本不怕这种变动。
+- **第三是无法动态筛选**。比如你想只给带 `@Transactional` 注解的方法加事务，静态代理只能写死逻辑，而 Spring AOP 可以在运行时通过切点表达式精准匹配需要增强的方法。
+
+所以 Spring 才选了 JDK 动态代理和 CGLIB：它们能在**运行时动态生成代理类**，一个切面配置就能覆盖成百上千个方法。像事务管理这种全局需求，用静态代理手动绑定根本不可行。
+
+------
+
+### AOP实现有哪些注解？
+
+常用的注解包括：
+
+- @Aspect：用于定义切面，标注在切面类上。
+- @Pointcut：定义切点，标注在方法上，用于指定连接点。
+- @Before：在方法执行之前执行通知。
+- @After：在方法执行之后执行通知。
+- @Around：在方法执行前后都执行通知。
+- @AfterReturning：在方法执行后返回结果后执行通知。
+- @AfterThrowing：在方法抛出异常后执行通知。
+- @Advice：通用的通知类型，可以替代@Before、@After等。
 
