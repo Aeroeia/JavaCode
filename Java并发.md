@@ -1065,10 +1065,80 @@ boolean success = ref.compareAndSet(100, 200, 0, 1);
 volatite作用有 2 个：
 
 - **保证变量对所有线程的可见性**。当一个变量被声明为volatile时，==它会保证对这个变量的写操作会立即刷新到主存中，而对这个变量的读操作会直接从主存中读取==，从而确保了多线程环境下对该变量访问的可见性。这意味着一个线程修改了volatile变量的值，其他线程能够立刻看到这个修改，不会受到各自线程工作内存的影响。
+
+Java 语言规范（JLS §17.7）明确指出：
+
+> For the purposes of the Java programming model, **writes to and reads of references and 32-bit values (like int, float) are always atomic.**
+>
+> 
+>
+> Writes and reads of **64-bit values (long and double) may not be atomic** unless the variable is declared `volatile`. 
+
+翻译：
+
+- 对引用类型和 32 位值（int, float 等）的读写**总是原子的**
+- 对 64 位值（long, double）的读写**可能不是原子的** —— **除非声明为 `volatile`**
+
+> **对于 64 位的 `long` 和 `double` 类型，在 32 位 JVM 或某些硬件平台上，如果不加 `volatile`，JVM 不保证其读写原子性，可能分成两次 32 位操作，导致读到“高32位是旧值、低32位是新值”的撕裂值（torn value）。**
+>
+> ❗ 对于 32 位类型（如 `int`, `float`, 引用类型），**即使不加 `volatile`，JVM 也保证单次读写原子性**，不会读到“写到一半”的值。 
+
 - **禁止指令重排序优化**。volatile关键字在Java中主要通过内存屏障来禁止特定类型的指令重排序。
   - 1）**写-写（Write-Write）屏障**：在对volatile变量执行写操作==之前，会插入一个写屏障==。这确保了在该变量写==操作之前的所有普通写操作都已完成==，防止了这些写操作被移到volatile写操作之后。
   - 2）**读-写（Read-Write）屏障**：在对volatile变量执行读操作==之后，会插入一个读屏障==。它确保了对volatile变量的读操作之后的所有普通读操作都==不会被提前到volatile读之前执行==，保证了读取到的数据是最新的。
   - 3）**写-读（Write-Read）屏障**：这是最重要的一个屏障，==它发生在volatile写之后和volatile读之前==。这个屏障确保了volatile写操作之前的所有内存操作（包括写操作）都不会被重排序到volatile读之后，同时也确保了volatile读操作之后的所有内存操作（包括读操作）都不会被重排序到volatile写之前。
+
+  > 编译器、JVM、CPU 为了优化性能，**在不改变单线程语义的前提下**，可能调整指令执行顺序。
+  >
+  > ```
+  > int a = 1;  // 语句1
+  > int b = 2;  // 语句2
+  > ```
+  >
+  > → 可能被重排为：
+  >
+  > ```
+  > int b = 2;  // 语句2
+  > int a = 1;  // 语句1
+  > ```
+  >
+  > ✅ 单线程下无影响
+  > ❌ 多线程下可能出错！
+
+  **指令重排的经典问题：对象初始化**
+
+  ```
+  public class Singleton {
+      private static Singleton instance;
+  
+      public static Singleton getInstance() {
+          if (instance == null) {
+              synchronized (Singleton.class) {
+                  if (instance == null) {
+                      instance = new Singleton(); // ❗ 这行可能被重排！
+                  }
+              }
+          }
+          return instance;
+      }
+  }
+  ```
+
+  `instance = new Singleton()` 实际分三步：
+
+  1. 分配内存空间
+  2. 初始化对象（调用构造函数）
+  3. 将 `instance` 指向内存地址
+
+  **⚠️ 可能的重排序：**
+
+  1. 分配内存空间
+  2. **将 `instance` 指向内存地址**（此时对象还未初始化！）
+  3. 初始化对象
+
+  → 如果线程A执行到第2步，线程B进入 `getInstance()` → 看到 `instance != null` → 返回**未初始化的对象** → **空指针或数据错乱！**
+
+  
 
 ### 指令重排序的原理是什么？
 

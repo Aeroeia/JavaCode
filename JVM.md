@@ -394,8 +394,13 @@ try {
 ![img](https://cdn.xiaolincoding.com//picgo/1719491243997-d62ceba6-2073-41a6-8320-dbe47ce9dbe4.png)
 
 - **启动类加载器（Bootstrap Class Loader）**：这是最顶层的类加载器，负责加载Java的核心库（如位于jre/lib/rt.jar中的类），它是用C++编写的，是JVM的一部分。启动类加载器无法被Java程序直接引用。
+
+  > **启动类加载器（Bootstrap ClassLoader）是 JVM 的核心类加载器，它负责加载 Java 核心类库（JRE 的核心 API），例如 `java.lang.\*`、`java.util.\*`、`java.io.\*` 等，这些类通常位于 `$JAVA_HOME/jre/lib/` 或 `$JAVA_HOME/lib/` 目录下（如 `rt.jar`, `resources.jar`, `charsets.jar` 等）。** 
+
 - **扩展类加载器（Extension Class Loader）**：它是Java语言实现的，继承自ClassLoader类，负责加载Java扩展目录（jre/lib/ext或由系统变量Java.ext.dirs指定的目录）下的jar包和类库。扩展类加载器由启动类加载器加载，并且父加载器就是启动类加载器。
+
 - **系统类加载器（System Class Loader）/ 应用程序类加载器（Application Class Loader）**：这也是Java语言实现的，负责加载用户类路径（ClassPath）上的指定类库，==是我们平时编写Java程序时默认使用的类加载器。==系统类加载器的父加载器是扩展类加载器。它可以通过ClassLoader.getSystemClassLoader()方法获取到。
+
 - **自定义类加载器（Custom Class Loader）**：开发者可以根据需求定制类的加载方式，比如从网络加载class文件、数据库、甚至是加密的文件中加载类等。自定义类加载器可以用来扩展Java应用程序的灵活性和安全性，是Java动态性的一个重要体现。
 
 这些类加载器之间的关系形成了双亲委派模型，==其核心思想是当一个类加载器收到类加载的请求时，首先不会自己去尝试加载这个类，而是把这个请求委派给父类加载器去完成==，每一层次的类加载器都是如此，因此所有的加载请求最终都应该传送到顶层的启动类加载器中。
