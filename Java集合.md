@@ -39,7 +39,7 @@ Set不允许存在重复的元素，与List不同，set中的元素是无序的�
 
 Map 是一个键值对集合，存储键、值和之间的映射。Key 无序，唯一；value 不要求有序，允许重复。==Map 没有继承于 Collection 接口==，从 Map 集合中检索元素时，只要给出键对象，就会返回对应的值对象。主要实现有TreeMap、HashMap、HashTable、LinkedHashMap、ConcurrentHashMap
 
-- HashMap：JDK1.8 之前 HashMap 由==数组+链表==组成的，数组是 HashMap 的主体，链表则是主要为了解决哈希冲突而存在的（“拉链法”解决冲突），JDK1.8 以后在解决哈希冲突时有了较大的变化，当链表长度大于阈值（默认为 8）时，将链表转化为==红黑树==，以减少搜索时间
+- HashMap：JDK1.8 之前 HashMap 由==数组+链表==组成的，数组是 HashMap 的主体，链表则是主要为了解决哈希冲突而存在的（“拉链法”解决冲突），JDK1.8 以后在解决哈希冲突时有了较大的变化==，当链表长度大于阈值（默认为 8）==时，将链表转化为==红黑树==，以减少搜索时间
 - LinkedHashMap：LinkedHashMap 继承自 ==HashMap==，所以它的底层仍然是基于拉链式散列结构即由数组和链表或红黑树组成。另外，LinkedHashMap 在上面结构的基础上，==增加了一条双向链表==，使得上面的结构可以保持键值对的插入顺序。同时通过对链表进行相应的操作，实现了访问顺序相关逻辑。
 - HashTable：数组+链表组成的，数组是 HashTable 的主体，链表则是主要为了解决哈希冲突而存在的
 - TreeMap：红黑树（自平衡的排序二叉树）
@@ -167,12 +167,12 @@ java.util.concurrent 包提供的都是线程安全的集合：
 并发 Queue：
 
 - **ConcurrentLinkedQueue**：是一个适用于高并发场景下的队列，它通过==无锁的方式(CAS)==，实现了高并发状态下的高性能。通常，ConcurrentLinkedQueue 的性能要好于 BlockingQueue 。
-- **BlockingQueue**：与 ConcurrentLinkedQueue 的使用场景不同，BlockingQueue 的主要功能并不是在于提升高并发时的队列性能，而在于简化多线程间的数据共享。BlockingQueue 提供一种读写==阻塞==等待的机制，即如果消费者速度较快，则 BlockingQueue 则可能被清空，此时消费线程再试图从 BlockingQueue 读取数据时就会被阻塞。反之，如果生产线程较快，则 BlockingQueue 可能会被装满，此时，生产线程再试图向 BlockingQueue 队列装入数据时，便会被阻塞等待。
+- **BlockingQueue**：与 ConcurrentLinkedQueue 的使用场景不同，BlockingQueue 的主要功能并不是在于提升高并发时的队列性能，而在于简化多线程间的数据共享。BlockingQueue 提供一种读写==阻塞==等待的机制，即如果消费者速度较快，则 BlockingQueue 则可能被清空，此时消费线程再试图从 BlockingQueue 读取数据时就会被阻塞。反之，如果生产线程较快，则 BlockingQueue 可能会被装满，此时，生产线程再试图向 BlockingQueue 队列装入数据时，便会被阻塞等待。==ReentrantLock==
 
 并发 Deque：
 
 - **LinkedBlockingDeque**：是一个线程安全的双端队列实现。它的内部使用链表结构，每一个节点都维护了一个前驱节点和一个后驱节点。LinkedBlockingDeque 没有进行读写锁的分离，因此==同一时间只能有一个线程对其进行操作==
-- **ConcurrentLinkedDeque**：ConcurrentLinkedDeque是一种基于链接节点的无限并发链表。可以安全地并发执行插入、删除和访问操作。当许多线程同时访问一个公共集合时，ConcurrentLinkedDeque是一个合适的选择。
+- **ConcurrentLinkedDeque**：ConcurrentLinkedDeque是一种基于链接节点的无限并发链表。可以安全地并发执行插入、删除和访问操作。当许多线程同时访问一个公共集合时，ConcurrentLinkedDeque是一个合适的选择。==靠CAS==
 
 ------
 
@@ -281,8 +281,6 @@ A 的新数组只有 100 个元素（因为它当时看到的 size 就是 100）
 同时，A 的数组里未拷贝/未初始化的位置就是 null → 如果访问就可能 NullPointerException
 ```
 
-
-
 ------
 
 #### 4. **迭代时结构被修改**
@@ -293,16 +291,20 @@ A 的新数组只有 100 个元素（因为它当时看到的 size 就是 100）
 
 ------
 
-#### 📝 小结
+### Volatile
 
-集合（`ArrayList`、`HashMap`、`HashSet` 等）的线程不安全主要体现在：
+- **可见性**：保证不同线程读写 volatile 变量时，操作会刷新到主内存，读到的是最新值。
+- **防止指令重排**：volatile 的读写操作在编译器和 CPU 层面都有内存屏障，保证顺序不会被重排。
+- 不加volatile可能会导致由于jvm优化推断出flag 没在这个线程中被修改 把 flag 缓存在一个寄存器或 CPU 的工作寄存区里而读不到新值
 
-1. **新增元素时索引覆盖** ✅
-2. **`size` 统计出错** ✅
-3. **扩容过程导致数据丢失/错乱** ✅
-4. **遍历时并发修改导致异常** ✅
+虽然硬件层有MESI（缓存一致性协议）保证一致 但是是通过StoreBuffer进行接受invalid指令并ack的 所以会有短暂不一致问题 但写入线程会立即看到新值 因为看到storebuffer有值会优先读buffer中的值
 
-
+> 1. **CPU 发出写请求**；
+> 2. **写入先放入本核心的 Store Buffer（写缓冲区）** → **此时写操作对本核心“看似完成”**；
+> 3. 同时，CPU 向其他核心**发送 Invalidate 消息**（因为要修改这个缓存行）；
+> 4. **等待其他核心确认 Invalidate**（即它们的缓存行变 Invalid）；
+> 5. **收到所有确认后，才将 Store Buffer 中的数据写入本地缓存行（Cache Line）**；
+> 6. **此时，MESI 状态变为 Modified，其他核心的副本已失效**。
 
 ------
 
@@ -325,8 +327,23 @@ A 的新数组只有 100 个元素（因为它当时看到的 size 就是 100）
 ![image-20250822085353342](assets/image-20250822085353342.png)
 
 - Vector 是 Java 早期提供的线程安全的动态数组，如果不需要线程安全，并不建议选择，毕竟同步是有额外开销的。Vector 内部是使用==对象数组==来保存数据，可以根据需要自动的增加容量，当数组已满时，会创建新的数组，并拷贝原有数组数据。
+
 - ArrayList 是应用更加广泛的==动态数组==实现，它本身不是线程安全的，所以==性能要好==很多。与 Vector 近似，ArrayList 也是可以根据需要调整容量，不过两者的调整逻辑有所区别，Vector 在扩容时会提高 1 倍，而 ArrayList 则是==增加 50%==。
+
 - LinkedList 顾名思义是 Java 提供的==双向链表==，所以它不需要像上面两种那样调整容量，它也不是线程安全的。
+
+- Collections.synchronizedList(list) 加锁版ArrayList和Vector类似
+
+- COW写时复制主要是不希望在遍历的时候读取到不一样的状态 这也是为什么不能只加锁而不写时复制的原因还有就是访问越界问题
+
+  > - 线程 A 执行 `add("X")`，刚执行完 `elementData[5] = "X"`，**还没来得及 `size++`**；
+  > - 线程 B 调用 `get(5)`，**读到了 "X"**；
+  > - 但此时 `size` 还是 5，按逻辑索引 5 应该是非法的（有效索引是 0~4）！
+  >
+  > 更糟的是，如果线程 B 先读 `size`（比如用于遍历），再读 `elementData[i]`，可能：
+  >
+  > - 读到 `size = 5`；
+  > - 但在读 `elementData[4]` 时，该位置还未写入（或正在被修改），**读到 `null` 或旧值**。
 
 ------
 
@@ -425,155 +442,6 @@ CopyOnWriteArrayList<String> copyOnWriteArrayList = new CopyOnWriteArrayList<>(a
 ```java
 Vector<String> vector = new Vector<>(arrayList);
 ```
-
-------
-
-### ArrayList并发问题
-
-#### 1. 为什么不存在size+2而元素只新增1
-
-------
-
-**先看 `add` 的关键逻辑：**
-
-```java
-elementData[size] = e;  // 写数组
-size++;                 // 自增
-```
-
-注意：`size++` **不是原子操作**，它实际上分三步：
-
-1. 读出 `size`
-2. `+1`
-3. 写回
-
-------
-
-两个线程同时 `add` 的过程（假设初始 `size=0`）
-
-**线程 A**
-
-- 读到 `size = 0`
-- 准备写 `elementData[0]`
-- （此时被切换）
-
-**线程 B**
-
-- 也读到 `size = 0`
-- 写 `elementData[0] = e2`
-- 执行 `size++`：读到 0，加 1，写回 `size = 1`
-
-**线程 A 继续**
-
-- 写 `elementData[0] = e1`（覆盖掉 e2）
-- 执行 `size++`：**注意它之前也读到 0**，所以结果还是写回 `size = 1`
-
-------
-
-**最终结果**
-
-- 数组 `elementData[0] = e1`
-- `size = 1`
-- **现象**：两个元素试图插入，但最后只保留了 1 个，`size` 也是 1。
-
-------
-
-**为什么不会出现 “新增一个元素但 size=2”**
-
-关键在于：
-
-- 两个线程在读 `size` 时都读到 **相同的旧值 (0)**
-- 后面 `size++` 的写回结果会互相覆盖
-- 结果只会是 **最后一次写入的那个值（1）**，不会累加成 2
-
-换句话说：
-
-- 并发时可能 “多加了元素但 size 只加了一次” ✅
-- 但不会 “少加元素却 size 多加了” ❌
-
-------
-
-类比
-
-就像两个人在纸上同时写 “1”，结果还是 **1**，不会 magically 变成 “2”。
-
-------
-
-#### 2. 那size+1但是新增两个元素情况是怎么样的呢
-
-------
-
-**回顾 `add` 代码**
-
-```java
-elementData[size] = e; // 先写数组
-size++;                // 再自增
-```
-
-关键点：
-
-1. `elementData[size] = e` 是基于当前读到的 **旧 size 值**
-2. `size++` 是非原子的（读 -> 加 1 -> 写）
-
-------
-
-**场景：`size = 0`，两个线程并发调用 `add`**
-
-**线程 A**
-
-- 读到 `size = 0`
-- 写 `elementData[0] = e1`
-- 执行 `size++`（假设还没写回）
-
-**线程 B（同时运行）**
-
-- **注意此时线程 B 可能已经看到 A 的写入了**
-- 线程 B 也读到 `size = 0`（因为自增还没写回）
-- 写 `elementData[0] = e2`（覆盖掉 e1）
-- 执行 `size++`，写回 `size = 1`
-
-**线程 A 再继续**
-
-- 把自己的 `size++` 写回（同样是 1）
-
-------
-
-**最终结果**
-
-- `elementData[0] = e2`（e1 被覆盖）
-- `size = 1`
-- **现象：有两个线程调用了 `add`，但最终只新增了一个元素，size 也是 1**
-
-------
-
-**那 size=1 但数组里有两个不同元素的情况呢？**
-
-有的！发生在 **不同索引写入但 size 丢失** 的时候。
-
-**假设初始 `size = 0`，线程 A 和 B 几乎同时执行：**
-
-- A：读到 `size=0` → 写 `elementData[0] = e1` → 准备 `size=1`
-- B：**稍晚一点**，这次可能读到了 **A 已经写回的 size=1**
-  → 写 `elementData[1] = e2` → 准备 `size=2`
-
-但因为竞争，假设最后写回的是 **A 的 size=1**（覆盖了 B 的 `2`）。
-
-------
-
-**最终结果：**
-
-- `elementData[0] = e1`
-- `elementData[1] = e2`
-- `size = 1`
-
-👉 这就是 “数组里有两个元素，但 size 只加了一次”的情况。
-
-------
-
-✅ 总结一下 ArrayList 并发下的可能错乱：
-
-1. **两个线程写同一位置** → 只留下一个元素，`size=1`
-2. **两个线程写不同位置** → 数组里 2 个元素，但 `size=1`（size 回退丢失更新）
 
 ------
 
