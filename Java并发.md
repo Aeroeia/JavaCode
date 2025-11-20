@@ -1229,7 +1229,7 @@ public class DeadlockExample {
 - AbortPolicy，直接抛出一个任务被线程池拒绝的异常。
 - DiscardPolicy，不做任何处理，静默拒绝提交的任务。
 - DiscardOldestPolicy，抛弃最老的任务，然后执行该任务。
-- 自定义拒绝策略，通过实现接口可以自定义任务拒绝策略。
+- 自定义拒绝策略，通过实现接口可以自定义任务拒绝策略 。==比如为了避免任务过多导致oom 可以通过自定义任务将任务存到redis、mysql或者mq中 然后重写线程池的afterexecute方法消费任务或者重写阻塞队列的take方法==
 
 ### 有线程池参数设置的经验吗？
 
